@@ -480,9 +480,16 @@ function blockOf(p, d) {
   return days.slice(a, b + 1);
 }
 
+/* 마감일도 같이 움직여야 하는 이동인지 — 마지막 작업일이 포함된 경우만 */
+function movesDeadline(p, src) {
+  if (!p.deadline || !p.days.length) return false;
+  return src.includes(p.days[p.days.length - 1]);
+}
+
 /* 작업일과 그날의 기록을 통째로 delta일 만큼 옮긴다 */
 function moveDays(p, src, delta) {
   if (!delta || !src.length) return;
+  const shiftDl = movesDeadline(p, src);
   const dest = src.map(d => ymd(addDays(parseYmd(d), delta)));
   const srcSet = new Set(src);
   const days = new Set(p.days.filter(d => !srcSet.has(d)));
@@ -502,6 +509,7 @@ function moveDays(p, src, delta) {
     for (const d of Object.keys(lg.goal)) if (!days.has(d)) delete lg.goal[d];
   }
   p.days = [...days].sort();
+  if (shiftDl) p.deadline = ymd(addDays(parseYmd(p.deadline), delta));
 }
 
 function setDeadline(p, d) {
@@ -564,18 +572,22 @@ document.getElementById('cal').addEventListener('click', e => {
 let drag = null, dragPaint = '';
 const cal = document.getElementById('cal');
 
-function paintDrop(dates) {
-  const key = dates.join();
+function paintDrop(dates, dl) {
+  const key = dates.join() + '|' + (dl || '');
   if (key === dragPaint) return;
   dragPaint = key;
-  cal.querySelectorAll('.cell.drop').forEach(c => c.classList.remove('drop'));
+  cal.querySelectorAll('.cell.drop, .cell.drop-dl').forEach(c => c.classList.remove('drop', 'drop-dl'));
   for (const d of dates) {
     const c = cal.querySelector('.cell[data-date="' + d + '"]');
     if (c) c.classList.add('drop');
   }
+  if (dl) {
+    const c = cal.querySelector('.cell[data-date="' + dl + '"]');
+    if (c) c.classList.add('drop-dl');
+  }
 }
 function clearDrag() {
-  cal.querySelectorAll('.cell.drop').forEach(c => c.classList.remove('drop'));
+  cal.querySelectorAll('.cell.drop, .cell.drop-dl').forEach(c => c.classList.remove('drop', 'drop-dl'));
   cal.querySelectorAll('.chip.dragging').forEach(c => c.classList.remove('dragging'));
   drag = null;
   dragPaint = '';
@@ -601,7 +613,9 @@ cal.addEventListener('dragover', e => {
   e.dataTransfer.dropEffect = 'move';
   const delta = dayDiff(parseYmd(drag.date), parseYmd(cell.dataset.date));
   const src = e.altKey ? [drag.date] : drag.block;
-  paintDrop(src.map(d => ymd(addDays(parseYmd(d), delta))));
+  const p = byId(drag.pid);
+  const dl = p && movesDeadline(p, src) ? ymd(addDays(parseYmd(p.deadline), delta)) : '';
+  paintDrop(src.map(d => ymd(addDays(parseYmd(d), delta))), dl);
 });
 
 cal.addEventListener('drop', e => {
