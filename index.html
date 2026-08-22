@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>웹툰 작업량 관리</title>
-<link rel="stylesheet" href="style.css?v=4">
+<link rel="stylesheet" href="style.css?v=5">
 </head>
 <body>
 <div class="app">
@@ -39,12 +39,11 @@
       <button class="btn primary sm" id="bannerDone">선택 완료</button>
     </div>
 
-    <div class="cal-wrap">
-      <div class="week-head">
-        <div class="sun">일</div><div>월</div><div>화</div><div>수</div><div>목</div><div>금</div><div class="sat">토</div>
-      </div>
+    <div class="week-head">
+      <div class="sun">일</div><div>월</div><div>화</div><div>수</div><div>목</div><div>금</div><div class="sat">토</div>
+    </div>
+    <div class="cal-wrap" id="calWrap">
       <div class="cal" id="cal"></div>
-      <div class="legend" id="legend"></div>
     </div>
   </main>
 </div>
@@ -62,6 +61,15 @@
         <span>총 작업량 (컷)</span>
         <input type="number" id="fCuts" min="1" step="1" placeholder="50">
       </label>
+      <div class="field">
+        <span>콘티</span>
+        <label class="toggle" for="fStoryboard">
+          <input type="checkbox" id="fStoryboard">
+          <span class="tg-box"></span>
+          <span class="tg-txt"><b>초안 · 클린업 분리 기록</b>
+            <small>켜면 총 컷수만큼 초안과 클린업을 각각 따로 기록합니다. (60컷 → 초안 60컷 + 클린업 60컷)</small></span>
+        </label>
+      </div>
       <div class="field">
         <span>마감일</span>
         <div class="dl"><span id="fDeadlineText">미지정</span><small>캘린더 날짜를 눌러 지정합니다</small></div>
@@ -94,6 +102,6 @@
   </div>
 </div>
 
-<script src="app.js?v=4"></script>
+<script src="app.js?v=5"></script>
 </body>
 </html>
