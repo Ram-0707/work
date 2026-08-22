@@ -98,16 +98,21 @@ button,input,select{font:inherit;color:inherit}
 /* 주간 체크리스트 칸 */
 .wcell{background:var(--panel-alt);min-width:0;padding:7px 8px 8px;display:flex;flex-direction:column;gap:4px;min-height:128px}
 .wc-list{list-style:none;display:flex;flex-direction:column;gap:3px}
-.wc-i{display:flex;align-items:flex-start;gap:5px;font-size:11px;line-height:1.45}
-.wc-i input[type=checkbox]{margin:2px 0 0;width:12px;height:12px;accent-color:var(--accent);flex:none;cursor:pointer}
+.wc-row{display:flex;align-items:flex-start;gap:4px;font-size:11px;line-height:1.45}
+.wc-g{flex:none;width:9px;text-align:center;color:var(--muted);opacity:.3;cursor:grab;font-size:9px;line-height:1.7;user-select:none;transition:opacity .12s}
+.wc-i:hover .wc-g{opacity:.75}
+.wc-i[draggable="true"] .wc-g{opacity:1;cursor:grabbing}
+.wc-row input[type=checkbox]{margin:2px 0 0;width:12px;height:12px;accent-color:var(--accent);flex:none;cursor:pointer}
+.wc-new input[type=checkbox]{pointer-events:none;opacity:.5}
 .wc-t{flex:1;outline:none;word-break:break-word;border-radius:4px;padding:0 2px;min-width:0}
 .wc-t:focus{background:var(--panel);box-shadow:0 0 0 1px var(--accent)}
 .wc-i.done .wc-t{text-decoration:line-through;color:var(--muted)}
+.wc-i.cdragging{opacity:.35}
+.wcell.cdrop{background:rgba(47,107,255,.10);box-shadow:inset 0 0 0 2px var(--accent)}
 .wc-x{border:none;background:none;color:var(--muted);cursor:pointer;font-size:10px;line-height:1;padding:2px;opacity:0;flex:none;transition:opacity .12s}
 .wc-i:hover .wc-x,.wc-x:focus{opacity:1}
-.wc-add{min-width:0;border:1px dashed var(--line);background:transparent;border-radius:7px;padding:4px 7px;font-size:11px;outline:none;color:var(--text);margin-top:auto;width:100%}
-.wc-add:focus{border-style:solid;border-color:var(--accent);background:var(--panel)}
-.wc-add::placeholder{color:var(--muted)}
+.wc-add{flex:1;min-width:0;border:none;border-bottom:1px solid transparent;background:transparent;padding:0 2px;font-size:11px;line-height:1.45;outline:none;color:var(--text)}
+.wc-add:focus{border-bottom-color:var(--accent)}
 .cell{background:var(--panel);min-width:0;min-height:128px;padding:7px 8px 8px;cursor:pointer;position:relative;transition:background .12s}
 .cell.alt{background:var(--panel-alt)}
 .cell:hover{background:var(--line-soft)}

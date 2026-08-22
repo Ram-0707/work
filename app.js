@@ -202,7 +202,8 @@ function chipHtml(p, d) {
 
 /* ── 주간 체크리스트 ────────────────────── */
 function itemHtml(it) {
-  return '<li class="wc-i' + (it.d ? ' done' : '') + '" data-id="' + it.id + '">' +
+  return '<li class="wc-row wc-i' + (it.d ? ' done' : '') + '" data-id="' + it.id + '">' +
+    '<span class="wc-g" title="드래그해서 옮기기">&#10250;</span>' +
     '<input type="checkbox"' + (it.d ? ' checked' : '') + '>' +
     '<span class="wc-t" contenteditable="plaintext-only">' + esc(it.t) + '</span>' +
     '<button class="wc-x" title="삭제">&#10005;</button></li>';
@@ -210,8 +211,11 @@ function itemHtml(it) {
 function weekCellHtml(wk) {
   const items = state.weeks[wk] || [];
   return '<div class="wcell" data-week="' + wk + '">' +
-    '<ul class="wc-list">' + items.map(itemHtml).join('') + '</ul>' +
-    '<input class="wc-add" placeholder="+ 항목 추가" data-week="' + wk + '"></div>';
+    '<ul class="wc-list">' + items.map(itemHtml).join('') +
+      '<li class="wc-row wc-new"><span class="wc-g"></span>' +
+      '<input type="checkbox" tabindex="-1" aria-hidden="true">' +
+      '<input class="wc-add" type="text" data-week="' + wk + '" aria-label="체크리스트 항목 추가">' +
+      '</li></ul></div>';
 }
 function weekItems(wk) {
   if (!state.weeks[wk]) state.weeks[wk] = [];
@@ -617,7 +621,8 @@ function clearDrag() {
 
 cal.addEventListener('dragstart', e => {
   const chip = e.target.closest('.chip');
-  if (!chip || mode) { e.preventDefault(); return; }
+  if (!chip) return;                              // 체크리스트 드래그는 아래에서 따로 처리
+  if (mode) { e.preventDefault(); return; }
   const p = byId(chip.dataset.p);
   const d = chip.closest('.cell').dataset.date;
   if (!p) { e.preventDefault(); return; }
@@ -658,6 +663,7 @@ cal.addEventListener('dragend', clearDrag);
 cal.addEventListener('change', e => {
   if (e.target.type !== 'checkbox') return;
   const li = e.target.closest('.wc-i');
+  if (!li) return;                                // 빈 줄의 네모는 표시용
   const wk = e.target.closest('.wcell').dataset.week;
   const it = (state.weeks[wk] || []).find(x => x.id === li.dataset.id);
   if (!it) return;
@@ -674,7 +680,7 @@ cal.addEventListener('keydown', e => {
     const it = { id: uid(), t, d: false };
     weekItems(wk).push(it);
     save();
-    e.target.closest('.wcell').querySelector('.wc-list').insertAdjacentHTML('beforeend', itemHtml(it));
+    e.target.closest('.wc-new').insertAdjacentHTML('beforebegin', itemHtml(it));
     e.target.value = '';
   } else if (e.target.classList.contains('wc-t') && e.key === 'Enter') {
     e.preventDefault();
@@ -683,6 +689,14 @@ cal.addEventListener('keydown', e => {
 });
 
 cal.addEventListener('click', e => {
+  const blank = e.target.closest('.wcell');       // 빈 곳이나 빈 줄을 누르면 바로 입력
+  if (blank && (e.target === blank || e.target.closest('.wc-new'))) {
+    if (e.target.tagName !== 'INPUT' || e.target.type === 'checkbox') {
+      e.preventDefault();
+      blank.querySelector('.wc-add').focus();
+    }
+    return;
+  }
   const x = e.target.closest('.wc-x');
   if (!x) return;
   const li = x.closest('.wc-i');
@@ -711,6 +725,80 @@ cal.addEventListener('focusout', e => {
   it.t = v;
   e.target.textContent = v;
   save();
+});
+
+/* ── 체크리스트 항목 드래그 (순서 바꾸기 · 다른 주로 옮기기) ── */
+let cdrag = null;
+
+/* 손잡이를 눌렀을 때만 끌 수 있게 한다 (글자 편집과 충돌 방지) */
+cal.addEventListener('mousedown', e => {
+  const g = e.target.closest('.wc-g');
+  const li = g && g.closest('.wc-i');
+  if (li) li.draggable = true;
+});
+document.addEventListener('mouseup', () => {
+  cal.querySelectorAll('.wc-i[draggable="true"]').forEach(li => li.removeAttribute('draggable'));
+});
+
+function endCDrag() {
+  cal.querySelectorAll('.cdragging').forEach(el => el.classList.remove('cdragging'));
+  cal.querySelectorAll('.wcell.cdrop').forEach(el => el.classList.remove('cdrop'));
+  cal.querySelectorAll('.wc-i[draggable="true"]').forEach(li => li.removeAttribute('draggable'));
+}
+
+cal.addEventListener('dragstart', e => {
+  const li = e.target.closest('.wc-i');
+  if (!li || !li.draggable) return;
+  cdrag = { wk: li.closest('.wcell').dataset.week, id: li.dataset.id };
+  li.classList.add('cdragging');
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', li.dataset.id);
+});
+
+cal.addEventListener('dragover', e => {
+  if (!cdrag) return;
+  const cell = e.target.closest('.wcell');
+  if (!cell) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  cal.querySelectorAll('.wcell.cdrop').forEach(c => { if (c !== cell) c.classList.remove('cdrop'); });
+  cell.classList.add('cdrop');
+
+  const el = cal.querySelector('.wc-i.cdragging');
+  const list = cell.querySelector('.wc-list');
+  let before = null;                              // 커서 위쪽 절반이면 그 항목 앞에 끼운다
+  for (const c of list.querySelectorAll('.wc-i:not(.cdragging)')) {
+    const r = c.getBoundingClientRect();
+    if (e.clientY < r.top + r.height / 2) { before = c; break; }
+  }
+  list.insertBefore(el, before || list.querySelector('.wc-new'));
+});
+
+cal.addEventListener('drop', e => {
+  if (!cdrag) return;
+  const cell = e.target.closest('.wcell');
+  const el = cal.querySelector('.wc-i.cdragging');
+  if (!cell || !el) { cdrag = null; endCDrag(); renderCalendar(); return; }
+  e.preventDefault();
+  const destWk = el.closest('.wcell').dataset.week;
+  const idx = [...el.closest('.wcell').querySelectorAll('.wc-i')].indexOf(el);
+
+  const src = state.weeks[cdrag.wk] || [];
+  const i = src.findIndex(x => x.id === cdrag.id);
+  const item = i >= 0 ? src.splice(i, 1)[0] : null;
+  pruneWeek(cdrag.wk);
+  if (item) weekItems(destWk).splice(idx, 0, item);
+  cdrag = null;
+  save();
+  endCDrag();
+  renderCalendar();
+});
+
+cal.addEventListener('dragend', () => {
+  const cancelled = !!cdrag;
+  cdrag = null;
+  endCDrag();
+  if (cancelled) renderCalendar();                // 취소되면 원래 순서로 되돌린다
 });
 
 /* ── 백업 내보내기 / 불러오기 ───────────── */
