@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>웹툰 작업량 관리</title>
+<link rel="stylesheet" href="style.css?v=4">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="sb-head">
+      <div class="logo">웹툰 작업량 관리</div>
+      <div class="sub">컷 단위 분배 · 진행 추적</div>
+    </div>
+    <div class="sb-body">
+      <div class="sb-label">프로젝트</div>
+      <div id="projects"></div>
+    </div>
+    <div class="sb-foot">
+      <button class="btn primary" id="addProject">+ 새 프로젝트</button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <button class="nav" id="prevM" aria-label="이전 달">‹</button>
+      <div class="month" id="monthLabel"></div>
+      <button class="nav" id="nextM" aria-label="다음 달">›</button>
+      <button class="btn ghost sm" id="todayBtn">오늘</button>
+      <div class="spacer"></div>
+      <div class="today-sum" id="todaySum"></div>
+    </div>
+
+    <div class="banner" id="banner" hidden>
+      <span class="bdot" id="bdot"></span>
+      <span id="bannerText"></span>
+      <span class="bhint" id="bannerHint"></span>
+      <button class="btn primary sm" id="bannerDone">선택 완료</button>
+    </div>
+
+    <div class="cal-wrap">
+      <div class="week-head">
+        <div class="sun">일</div><div>월</div><div>화</div><div>수</div><div>목</div><div>금</div><div class="sat">토</div>
+      </div>
+      <div class="cal" id="cal"></div>
+      <div class="legend" id="legend"></div>
+    </div>
+  </main>
+</div>
+
+<!-- 프로젝트 모달 -->
+<div class="mask" id="pMask" hidden>
+  <div class="modal">
+    <div class="m-head"><span id="pTitle">새 프로젝트</span><button class="icon" data-close="pMask">✕</button></div>
+    <div class="m-body">
+      <label class="field">
+        <span>프로젝트 이름</span>
+        <input type="text" id="fName" placeholder="예) 회귀한 천재화가 12화">
+      </label>
+      <label class="field">
+        <span>총 작업량 (컷)</span>
+        <input type="number" id="fCuts" min="1" step="1" placeholder="50">
+      </label>
+      <div class="field">
+        <span>마감일</span>
+        <div class="dl"><span id="fDeadlineText">미지정</span><small>캘린더 날짜를 눌러 지정합니다</small></div>
+      </div>
+      <div class="field">
+        <span>색상</span>
+        <div class="swatches" id="fColors"></div>
+      </div>
+      <p class="hint">저장하면 캘린더에서 작업할 날짜를 하루씩 눌러 지정할 수 있어요.</p>
+    </div>
+    <div class="m-foot">
+      <button class="btn danger ghost" id="pDelete">삭제</button>
+      <div class="spacer"></div>
+      <button class="btn ghost" data-close="pMask">취소</button>
+      <button class="btn primary" id="pSave">저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- 날짜 모달 -->
+<div class="mask" id="dMask" hidden>
+  <div class="modal">
+    <div class="m-head"><span id="dTitle"></span><button class="icon" data-close="dMask">✕</button></div>
+    <div class="m-body" id="dBody"></div>
+    <div class="m-foot">
+      <button class="btn ghost" id="dNewDeadline">+ 이 날짜 마감으로 새 프로젝트</button>
+      <div class="spacer"></div>
+      <button class="btn primary" data-close="dMask">완료</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js?v=4"></script>
+</body>
+</html>
