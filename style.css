@@ -113,6 +113,10 @@ button,input,select{font:inherit;color:inherit}
 .chip .cline.na b{color:var(--muted);font-weight:600}
 .chip .cline.ok b::after{content:" \2713";color:var(--ok)}
 .chip .grp+.grp{margin-top:2px;padding-top:2px;border-top:1px dashed rgba(128,138,158,.35)}
+.chip[draggable="true"]{cursor:grab}
+.chip[draggable="true"]:active{cursor:grabbing}
+.chip.dragging{opacity:.35}
+.cell.drop{background:rgba(47,107,255,.12);box-shadow:inset 0 0 0 2px var(--accent)}
 
 /* modal */
 .mask{position:fixed;inset:0;background:rgba(12,15,22,.42);display:grid;place-items:center;padding:20px;z-index:50}

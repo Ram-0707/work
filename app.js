@@ -193,7 +193,9 @@ function chipHtml(p, d) {
     '</div>';
   }
   if (!any) return '';
-  return '<div class="chip" style="border-left-color:' + p.color + ';background:' + p.color + '14" title="' + tip + '">' +
+  return '<div class="chip"' + (mode ? '' : ' draggable="true"') + ' data-p="' + p.id + '"' +
+    ' style="border-left-color:' + p.color + ';background:' + p.color + '14"' +
+    ' title="' + tip + '&#10;드래그해서 다른 날짜로 이동 (Alt+드래그: 이 날짜만)">' +
     '<span class="cn" style="color:' + p.color + '">' + esc(p.name) + '</span>' + grps + '</div>';
 }
 
@@ -467,6 +469,41 @@ function toggleDay(p, d, shift) {
   render();
 }
 
+/* 드래그한 날짜를 포함하는 "연달아 붙어 있는" 작업일 묶음 */
+function blockOf(p, d) {
+  const days = p.days.slice().sort();
+  const i = days.indexOf(d);
+  if (i < 0) return [d];
+  let a = i, b = i;
+  while (a > 0 && dayDiff(parseYmd(days[a - 1]), parseYmd(days[a])) === 1) a--;
+  while (b < days.length - 1 && dayDiff(parseYmd(days[b]), parseYmd(days[b + 1])) === 1) b++;
+  return days.slice(a, b + 1);
+}
+
+/* 작업일과 그날의 기록을 통째로 delta일 만큼 옮긴다 */
+function moveDays(p, src, delta) {
+  if (!delta || !src.length) return;
+  const dest = src.map(d => ymd(addDays(parseYmd(d), delta)));
+  const srcSet = new Set(src);
+  const days = new Set(p.days.filter(d => !srcSet.has(d)));
+  dest.forEach(d => days.add(d));
+
+  for (const k of Object.keys(TRACKS)) {
+    const lg = p.log[k];
+    const done = {}, goal = {};
+    src.forEach((d, i) => {                       // 옮길 기록을 먼저 떠낸다
+      if (has(lg.done, d)) done[dest[i]] = lg.done[d];
+      if (has(lg.goal, d)) goal[dest[i]] = lg.goal[d];
+    });
+    for (const d of src) { delete lg.done[d]; delete lg.goal[d]; }
+    Object.assign(lg.done, done);                 // 목적지에 기록이 있었다면 옮긴 쪽이 이긴다
+    Object.assign(lg.goal, goal);
+    for (const d of Object.keys(lg.done)) if (!days.has(d)) delete lg.done[d];
+    for (const d of Object.keys(lg.goal)) if (!days.has(d)) delete lg.goal[d];
+  }
+  p.days = [...days].sort();
+}
+
 function setDeadline(p, d) {
   p.deadline = p.deadline === d ? '' : d;
   mode = p.days.length ? null : { type: 'days', id: p.id };
@@ -522,6 +559,64 @@ document.getElementById('cal').addEventListener('click', e => {
   if (mode.type === 'days') toggleDay(p, d, e.shiftKey);
   else setDeadline(p, d);
 });
+
+/* ── 드래그로 작업일 옮기기 ─────────────── */
+let drag = null, dragPaint = '';
+const cal = document.getElementById('cal');
+
+function paintDrop(dates) {
+  const key = dates.join();
+  if (key === dragPaint) return;
+  dragPaint = key;
+  cal.querySelectorAll('.cell.drop').forEach(c => c.classList.remove('drop'));
+  for (const d of dates) {
+    const c = cal.querySelector('.cell[data-date="' + d + '"]');
+    if (c) c.classList.add('drop');
+  }
+}
+function clearDrag() {
+  cal.querySelectorAll('.cell.drop').forEach(c => c.classList.remove('drop'));
+  cal.querySelectorAll('.chip.dragging').forEach(c => c.classList.remove('dragging'));
+  drag = null;
+  dragPaint = '';
+}
+
+cal.addEventListener('dragstart', e => {
+  const chip = e.target.closest('.chip');
+  if (!chip || mode) { e.preventDefault(); return; }
+  const p = byId(chip.dataset.p);
+  const d = chip.closest('.cell').dataset.date;
+  if (!p) { e.preventDefault(); return; }
+  drag = { pid: p.id, date: d, block: blockOf(p, d) };
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', p.id);   // Firefox 대응
+  chip.classList.add('dragging');
+});
+
+cal.addEventListener('dragover', e => {
+  if (!drag) return;
+  const cell = e.target.closest('.cell');
+  if (!cell) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  const delta = dayDiff(parseYmd(drag.date), parseYmd(cell.dataset.date));
+  const src = e.altKey ? [drag.date] : drag.block;
+  paintDrop(src.map(d => ymd(addDays(parseYmd(d), delta))));
+});
+
+cal.addEventListener('drop', e => {
+  if (!drag) return;
+  const cell = e.target.closest('.cell');
+  if (!cell) return;
+  e.preventDefault();
+  const p = byId(drag.pid);
+  const delta = dayDiff(parseYmd(drag.date), parseYmd(cell.dataset.date));
+  const src = e.altKey ? [drag.date] : drag.block;
+  clearDrag();
+  if (p && delta) { moveDays(p, src, delta); save(); render(); }
+});
+
+cal.addEventListener('dragend', clearDrag);
 
 document.getElementById('dBody').addEventListener('change', e => {
   const i = e.target;
