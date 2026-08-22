@@ -11,6 +11,7 @@ let editingId = null;   // 프로젝트 모달 편집 대상
 let formColor = PALETTE[0];
 let formDeadline = '';
 let dayDate = null;     // 날짜 모달 대상
+const openCards = new Set();   // 사이드바에서 펼쳐 둔 프로젝트
 
 const TODAY = ymd(new Date());
 
@@ -158,21 +159,24 @@ function renderSidebar() {
       '</div>';
     }).join('');
     const openDays = tracks[0] ? SCH[p.id][tracks[0].k].openCount : 0;
-    return '<div class="card' + (active ? ' sel' : '') + '">' +
-      '<div class="card-top">' +
+    const open = openCards.has(p.id) || active;   // 날짜 지정 중인 프로젝트는 항상 펼침
+    return '<div class="card' + (active ? ' sel' : '') + (open ? ' open' : '') + '">' +
+      '<div class="card-top" data-act="toggle" data-id="' + p.id + '">' +
+        '<span class="chev">&#8250;</span>' +
         '<span class="dot" style="background:' + p.color + '"></span>' +
         '<span class="pname">' + esc(p.name) + '</span>' +
         (p.storyboard ? '<span class="tag">콘티</span>' : '') +
         '<button class="icon" data-act="edit" data-id="' + p.id + '" title="수정">&#8942;</button>' +
-      '</div>' + trk +
-      '<div class="meta">남은 작업일 ' + openDays + '일' +
-        (p.deadline ? ' · 마감 ' + fmtShort(p.deadline) : ' · 마감 미지정') + '</div>' +
-      '<div class="card-btns">' +
-        '<button class="btn ghost sm" data-act="days" data-id="' + p.id + '">' +
-          (active && mode.type === 'days' ? '선택 완료' : '작업일 (' + p.days.length + '일)') + '</button>' +
-        '<button class="btn ghost sm" data-act="deadline" data-id="' + p.id + '">' +
-          (active && mode.type === 'deadline' ? '지정 취소' : '마감일') + '</button>' +
       '</div>' +
+      (open ? '<div class="card-body">' + trk +
+        '<div class="meta">남은 작업일 ' + openDays + '일' +
+          (p.deadline ? ' · 마감 ' + fmtShort(p.deadline) : ' · 마감 미지정') + '</div>' +
+        '<div class="card-btns">' +
+          '<button class="btn ghost sm" data-act="days" data-id="' + p.id + '">' +
+            (active && mode.type === 'days' ? '선택 완료' : '작업일 (' + p.days.length + '일)') + '</button>' +
+          '<button class="btn ghost sm" data-act="deadline" data-id="' + p.id + '">' +
+            (active && mode.type === 'deadline' ? '지정 취소' : '마감일') + '</button>' +
+        '</div></div>' : '') +
     '</div>';
   }).join('');
 }
@@ -211,11 +215,11 @@ function itemHtml(it) {
 function weekCellHtml(wk) {
   const items = state.weeks[wk] || [];
   return '<div class="wcell" data-week="' + wk + '">' +
-    '<ul class="wc-list">' + items.map(itemHtml).join('') +
-      '<li class="wc-row wc-new"><span class="wc-g"></span>' +
+    '<ul class="wc-list">' + items.map(itemHtml).join('') + '</ul>' +
+    '<div class="wc-row wc-new"><span class="wc-g"></span>' +
       '<input type="checkbox" tabindex="-1" aria-hidden="true">' +
       '<input class="wc-add" type="text" data-week="' + wk + '" aria-label="체크리스트 항목 추가">' +
-      '</li></ul></div>';
+    '</div></div>';
 }
 function weekItems(wk) {
   if (!state.weeks[wk]) state.weeks[wk] = [];
@@ -225,11 +229,31 @@ function pruneWeek(wk) {
   if (state.weeks[wk] && !state.weeks[wk].length) delete state.weeks[wk];
 }
 
-function renderCalendar() {
+/* 다시 그릴 때 보고 있던 위치를 그대로 유지한다.
+   화면 맨 위에 걸친 주를 날짜로 기억했다가 같은 자리에 돌려놓는 방식이라
+   주를 앞뒤로 더 붙여도 화면이 튀지 않는다. */
+function viewAnchor() {
+  const top = wrap.getBoundingClientRect().top;
+  for (const w of document.getElementById('cal').children) {
+    const r = w.getBoundingClientRect();
+    if (r.bottom > top + 1) return { wk: w.dataset.wk, off: r.top - top };
+  }
+  return null;
+}
+function restoreAnchor(a) {
+  if (!a) return;
+  const el = document.getElementById('cal').querySelector('.week[data-wk="' + a.wk + '"]');
+  if (!el) return;
+  const top = el.getBoundingClientRect().top - wrap.getBoundingClientRect().top + wrap.scrollTop;
+  wrap.scrollTop = Math.max(0, top - a.off);
+}
+
+function renderCalendar(keepView) {
+  const keep = keepView === false ? null : viewAnchor();
   const target = mode ? byId(mode.id) : null;
   let html = '';
   for (let w = 0; w < weekCount; w++) {
-    html += '<div class="week">';
+    html += '<div class="week" data-wk="' + ymd(addDays(anchor, w * 7)) + '">';
     for (let i = 0; i < 7; i++) {
       const cur = addDays(anchor, w * 7 + i);
       const d = ymd(cur);
@@ -259,6 +283,7 @@ function renderCalendar() {
     html += weekCellHtml(ymd(addDays(anchor, w * 7))) + '</div>';
   }
   document.getElementById('cal').innerHTML = html;
+  restoreAnchor(keep);
   updateMonthLabel();
 }
 
@@ -306,11 +331,9 @@ function extendDown() {
 }
 function extendUp() {
   if (weekCount >= MAX_WEEKS) return false;
-  const before = wrap.scrollHeight;
   anchor = addDays(anchor, -12 * 7);
   weekCount += 12;
-  renderCalendar();
-  wrap.scrollTop += wrap.scrollHeight - before;      // 위에 붙인 만큼 보정
+  renderCalendar();                                  // 앵커 복원이 위치를 맞춰준다
   return true;
 }
 
@@ -343,7 +366,7 @@ function ensureRange(d) {
 }
 function scrollToDate(d, smooth) {
   const idx = ensureRange(d);
-  renderCalendar();
+  renderCalendar(false);
   const wk = document.getElementById('cal').children[idx];
   if (!wk) return;
   const top = wk.getBoundingClientRect().top - wrap.getBoundingClientRect().top + wrap.scrollTop;
@@ -389,8 +412,7 @@ function saveProject() {
   }
   save();
   document.getElementById('pMask').hidden = true;
-  render();
-  if (!editingId && formDeadline) scrollToDate(formDeadline);
+  render();                                       // 보고 있던 화면 위치를 그대로 둔다
 }
 
 function deleteProject() {
@@ -578,6 +600,11 @@ document.getElementById('projects').addEventListener('click', e => {
   if (!b) return;
   const act = b.dataset.act, id = b.dataset.id;
   if (act === 'edit') { openProject(id); return; }
+  if (act === 'toggle') {
+    if (openCards.has(id)) openCards.delete(id); else openCards.add(id);
+    renderSidebar();
+    return;
+  }
   mode = (mode && mode.id === id && mode.type === act) ? null : { type: act, id };
   lastPick = null;
   render();
@@ -680,7 +707,7 @@ cal.addEventListener('keydown', e => {
     const it = { id: uid(), t, d: false };
     weekItems(wk).push(it);
     save();
-    e.target.closest('.wc-new').insertAdjacentHTML('beforebegin', itemHtml(it));
+    e.target.closest('.wcell').querySelector('.wc-list').insertAdjacentHTML('beforeend', itemHtml(it));
     e.target.value = '';
   } else if (e.target.classList.contains('wc-t') && e.key === 'Enter') {
     e.preventDefault();
@@ -771,7 +798,7 @@ cal.addEventListener('dragover', e => {
     const r = c.getBoundingClientRect();
     if (e.clientY < r.top + r.height / 2) { before = c; break; }
   }
-  list.insertBefore(el, before || list.querySelector('.wc-new'));
+  if (before) list.insertBefore(el, before); else list.appendChild(el);
 });
 
 cal.addEventListener('drop', e => {

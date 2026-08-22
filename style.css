@@ -42,9 +42,14 @@ button,input,select{font:inherit;color:inherit}
 .foot-row{display:flex;gap:6px;margin-top:7px}
 .foot-row .btn{flex:1}
 
-.card{border:1px solid var(--line);border-radius:14px;padding:13px 13px 11px;margin-bottom:10px;transition:border-color .15s,box-shadow .15s}
+.card{border:1px solid var(--line);border-radius:12px;margin-bottom:7px;transition:border-color .15s,box-shadow .15s}
 .card.sel{border-color:var(--accent);box-shadow:0 0 0 3px rgba(47,107,255,.16)}
-.card-top{display:flex;align-items:center;gap:8px;margin-bottom:9px}
+.card-top{display:flex;align-items:center;gap:7px;padding:9px 10px;cursor:pointer;border-radius:11px}
+.card-top:hover{background:var(--line-soft)}
+.card-body{padding:2px 12px 11px}
+.chev{flex:none;color:var(--muted);font-size:14px;line-height:1;transition:transform .15s;width:9px;text-align:center}
+.card.open .chev{transform:rotate(90deg)}
+.card.open .card-top{border-radius:11px 11px 0 0}
 .dot{width:10px;height:10px;border-radius:50%;flex:none}
 .pname{font-weight:600;font-size:13.5px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .bar{height:5px;border-radius:99px;background:var(--line-soft);overflow:hidden}
@@ -103,7 +108,8 @@ button,input,select{font:inherit;color:inherit}
 .wc-i:hover .wc-g{opacity:.75}
 .wc-i[draggable="true"] .wc-g{opacity:1;cursor:grabbing}
 .wc-row input[type=checkbox]{margin:2px 0 0;width:12px;height:12px;accent-color:var(--accent);flex:none;cursor:pointer}
-.wc-new input[type=checkbox]{pointer-events:none;opacity:.5}
+.wc-new{margin-top:auto;padding-top:4px}
+.wc-new input[type=checkbox]{pointer-events:none;opacity:.45}
 .wc-t{flex:1;outline:none;word-break:break-word;border-radius:4px;padding:0 2px;min-width:0}
 .wc-t:focus{background:var(--panel);box-shadow:0 0 0 1px var(--accent)}
 .wc-i.done .wc-t{text-decoration:line-through;color:var(--muted)}
