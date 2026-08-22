@@ -18,7 +18,8 @@ const TODAY = ymd(new Date());
 function load() {
   let s = null;
   try { s = JSON.parse(localStorage.getItem(KEY)); } catch (e) { /* 손상된 데이터는 무시 */ }
-  if (!s || !Array.isArray(s.projects)) return { projects: [] };
+  if (!s || !Array.isArray(s.projects)) return { projects: [], weeks: {} };
+  s.weeks = s.weeks || {};                        // 주간 체크리스트 (일요일 날짜가 key)
   for (const p of s.projects) {
     p.days = p.days || [];
     p.storyboard = !!p.storyboard;
@@ -199,6 +200,27 @@ function chipHtml(p, d) {
     '<span class="cn" style="color:' + p.color + '">' + esc(p.name) + '</span>' + grps + '</div>';
 }
 
+/* ── 주간 체크리스트 ────────────────────── */
+function itemHtml(it) {
+  return '<li class="wc-i' + (it.d ? ' done' : '') + '" data-id="' + it.id + '">' +
+    '<input type="checkbox"' + (it.d ? ' checked' : '') + '>' +
+    '<span class="wc-t" contenteditable="plaintext-only">' + esc(it.t) + '</span>' +
+    '<button class="wc-x" title="삭제">&#10005;</button></li>';
+}
+function weekCellHtml(wk) {
+  const items = state.weeks[wk] || [];
+  return '<div class="wcell" data-week="' + wk + '">' +
+    '<ul class="wc-list">' + items.map(itemHtml).join('') + '</ul>' +
+    '<input class="wc-add" placeholder="+ 항목 추가" data-week="' + wk + '"></div>';
+}
+function weekItems(wk) {
+  if (!state.weeks[wk]) state.weeks[wk] = [];
+  return state.weeks[wk];
+}
+function pruneWeek(wk) {
+  if (state.weeks[wk] && !state.weeks[wk].length) delete state.weeks[wk];
+}
+
 function renderCalendar() {
   const target = mode ? byId(mode.id) : null;
   let html = '';
@@ -230,7 +252,7 @@ function renderCalendar() {
         (missed ? '<span class="warn">미입력</span>' : '') + '</div>' + chips +
       '</div>';
     }
-    html += '</div>';
+    html += weekCellHtml(ymd(addDays(anchor, w * 7))) + '</div>';
   }
   document.getElementById('cal').innerHTML = html;
   updateMonthLabel();
@@ -631,6 +653,110 @@ cal.addEventListener('drop', e => {
 });
 
 cal.addEventListener('dragend', clearDrag);
+
+/* ── 체크리스트 조작 (전체 렌더 없이 해당 칸만 갱신) ── */
+cal.addEventListener('change', e => {
+  if (e.target.type !== 'checkbox') return;
+  const li = e.target.closest('.wc-i');
+  const wk = e.target.closest('.wcell').dataset.week;
+  const it = (state.weeks[wk] || []).find(x => x.id === li.dataset.id);
+  if (!it) return;
+  it.d = e.target.checked;
+  li.classList.toggle('done', it.d);
+  save();
+});
+
+cal.addEventListener('keydown', e => {
+  if (e.target.classList.contains('wc-add') && e.key === 'Enter') {
+    const t = e.target.value.trim();
+    if (!t) return;
+    const wk = e.target.dataset.week;
+    const it = { id: uid(), t, d: false };
+    weekItems(wk).push(it);
+    save();
+    e.target.closest('.wcell').querySelector('.wc-list').insertAdjacentHTML('beforeend', itemHtml(it));
+    e.target.value = '';
+  } else if (e.target.classList.contains('wc-t') && e.key === 'Enter') {
+    e.preventDefault();
+    e.target.blur();
+  }
+});
+
+cal.addEventListener('click', e => {
+  const x = e.target.closest('.wc-x');
+  if (!x) return;
+  const li = x.closest('.wc-i');
+  const wk = x.closest('.wcell').dataset.week;
+  state.weeks[wk] = (state.weeks[wk] || []).filter(i => i.id !== li.dataset.id);
+  pruneWeek(wk);
+  save();
+  li.remove();
+});
+
+cal.addEventListener('focusout', e => {
+  if (!e.target.classList || !e.target.classList.contains('wc-t')) return;
+  const li = e.target.closest('.wc-i');
+  const wk = e.target.closest('.wcell').dataset.week;
+  const arr = state.weeks[wk] || [];
+  const it = arr.find(x => x.id === li.dataset.id);
+  if (!it) return;
+  const v = e.target.textContent.trim();
+  if (!v) {                                       // 내용을 지우면 항목 삭제
+    state.weeks[wk] = arr.filter(x => x.id !== it.id);
+    pruneWeek(wk);
+    save();
+    li.remove();
+    return;
+  }
+  it.t = v;
+  e.target.textContent = v;
+  save();
+});
+
+/* ── 백업 내보내기 / 불러오기 ───────────── */
+function exportData() {
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = '웹툰작업량_백업_' + TODAY + '.json';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function importData(file) {
+  const r = new FileReader();
+  r.onload = () => {
+    let obj;
+    try { obj = JSON.parse(r.result); } catch (err) { obj = null; }
+    if (!obj || !Array.isArray(obj.projects)) {
+      alert('백업 파일을 읽을 수 없습니다.\n이 앱에서 내보낸 .json 파일이 맞는지 확인해 주세요.');
+      return;
+    }
+    const now = state.projects.length;
+    if (!confirm('백업 파일을 불러옵니다.\n\n' +
+      '· 불러올 프로젝트: ' + obj.projects.length + '개\n' +
+      '· 지금 있는 프로젝트: ' + now + '개 (모두 지워집니다)\n\n' +
+      '계속할까요?')) return;
+    localStorage.setItem(KEY, JSON.stringify(obj));
+    state = load();
+    render();
+    scrollToDate(TODAY);
+    alert('불러오기가 끝났습니다. 프로젝트 ' + state.projects.length + '개를 복원했습니다.');
+  };
+  r.onerror = () => alert('파일을 여는 데 실패했습니다.');
+  r.readAsText(file);
+}
+
+document.getElementById('exportBtn').onclick = exportData;
+document.getElementById('importBtn').onclick = () => document.getElementById('importFile').click();
+document.getElementById('importFile').addEventListener('change', e => {
+  const f = e.target.files[0];
+  if (f) importData(f);
+  e.target.value = '';                            // 같은 파일을 다시 골라도 동작하도록
+});
 
 document.getElementById('dBody').addEventListener('change', e => {
   const i = e.target;

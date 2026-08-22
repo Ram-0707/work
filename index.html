@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>웹툰 작업량 관리</title>
-<link rel="stylesheet" href="style.css?v=7">
+<link rel="stylesheet" href="style.css?v=10">
 </head>
 <body>
 <div class="app">
@@ -19,6 +19,11 @@
     </div>
     <div class="sb-foot">
       <button class="btn primary" id="addProject">+ 새 프로젝트</button>
+      <div class="foot-row">
+        <button class="btn ghost sm" id="exportBtn">백업 내보내기</button>
+        <button class="btn ghost sm" id="importBtn">불러오기</button>
+      </div>
+      <input type="file" id="importFile" accept="application/json,.json" hidden>
     </div>
   </aside>
 
@@ -40,7 +45,7 @@
     </div>
 
     <div class="week-head">
-      <div class="sun">일</div><div>월</div><div>화</div><div>수</div><div>목</div><div>금</div><div class="sat">토</div>
+      <div class="sun">일</div><div>월</div><div>화</div><div>수</div><div>목</div><div>금</div><div class="sat">토</div><div class="wk">체크리스트</div>
     </div>
     <div class="cal-wrap" id="calWrap">
       <div class="cal" id="cal"></div>
@@ -102,6 +107,6 @@
   </div>
 </div>
 
-<script src="app.js?v=7"></script>
+<script src="app.js?v=10"></script>
 </body>
 </html>
