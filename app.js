@@ -29,13 +29,13 @@ function load() {
     if (OLD_COLORS[p.color]) p.color = OLD_COLORS[p.color];
     if (!p.log) p.log = {};
     if (p.done || p.goal) {                       // 콘티 기능 이전 데이터 이행
-      p.log.main = { done: p.done || {}, goal: p.goal || {} };
+      p.log.main = { done: p.done || {} };
       delete p.done; delete p.goal;
     }
     for (const k of Object.keys(TRACKS)) {
       p.log[k] = p.log[k] || {};
       p.log[k].done = p.log[k].done || {};
-      p.log[k].goal = p.log[k].goal || {};
+      delete p.log[k].goal;                       // 목표량은 저장하지 않고 매번 계산한다
     }
   }
   return s;
@@ -76,7 +76,10 @@ function tracksOf(p) {
      (50컷 / 5일 → 매일 10컷)
    · 실적을 입력하면 그만큼 남은 컷수에서 빠지고, 남은 날 수도 하나 줄어
      나머지 날들의 목표량이 다시 계산된다.
-   · 이미 입력한 날은 입력 당시의 목표량(goal 스냅샷)을 그대로 보여준다.
+   · 이미 입력한 날의 목표량은 날짜 순으로 되짚어 구한다. 그날까지 남아 있던
+     컷수를 그때 남아 있던 작업일 수로 나눈 값이다. 저장해 두지 않고 매번 다시
+     계산하므로 총 작업량을 고치면 입력한 실적은 그대로 둔 채 목표량만 새 총량
+     기준으로 다시 잡힌다.
    · 하루를 쉬었다면 0을 입력하면 된다 → 그날이 남은 날에서 빠지고 뒤로 재분배.
    · 콘티(초안·클린업)를 켜면 각 트랙이 총 컷수를 따로 가지고 독립적으로 계산된다. */
 function schedule(p, track) {
@@ -92,11 +95,17 @@ function schedule(p, track) {
   const target = openCount ? Math.ceil(remaining / openCount) : 0;
 
   const byDate = {};
+  let left = total, used = 0;
   for (const d of days) {
-    const entered = has(lg.done, d);
-    const done = entered ? Number(lg.done[d]) || 0 : 0;
-    const goal = entered ? (lg.goal[d] != null ? lg.goal[d] : target) : target;
-    byDate[d] = { goal, done, entered, missed: !entered && d < TODAY };
+    if (has(lg.done, d)) {
+      const open = days.length - used;             // 그 시점에 남아 있던 작업일 수
+      const done = Number(lg.done[d]) || 0;
+      byDate[d] = { goal: open > 0 ? Math.ceil(left / open) : 0, done, entered: true, missed: false };
+      left = Math.max(0, left - done);
+      used++;
+    } else {
+      byDate[d] = { goal: target, done: 0, entered: false, missed: d < TODAY };
+    }
   }
   return { byDate, target, doneSum, remaining, openCount, total };
 }
@@ -427,7 +436,7 @@ function saveProject() {
     Object.assign(byId(editingId), { name, totalCuts: cuts, color: formColor, storyboard: sb });
   } else {
     const log = {};
-    for (const k of Object.keys(TRACKS)) log[k] = { done: {}, goal: {} };
+    for (const k of Object.keys(TRACKS)) log[k] = { done: {} };
     const p = { id: uid(), name, color: formColor, totalCuts: cuts, deadline: formDeadline, storyboard: sb, days: [], log };
     state.projects.push(p);
     mode = { type: 'days', id: p.id };
@@ -503,13 +512,8 @@ function setDone(pid, track, raw) {
   if (!p) return;
   const lg = p.log[track];
   const v = String(raw).trim();
-  if (v === '') {
-    delete lg.done[dayDate];
-    delete lg.goal[dayDate];
-  } else {
-    if (lg.goal[dayDate] == null) lg.goal[dayDate] = SCH[pid][track].target;  // 입력 시점 목표량 고정
-    lg.done[dayDate] = Math.max(0, parseInt(v, 10) || 0);
-  }
+  if (v === '') delete lg.done[dayDate];
+  else lg.done[dayDate] = Math.max(0, parseInt(v, 10) || 0);
   save();
   render();
   refreshDayGoals();
@@ -517,7 +521,7 @@ function setDone(pid, track, raw) {
 
 /* ── 캘린더 클릭 동작 ───────────────────── */
 function clearDay(p, d) {
-  for (const k of Object.keys(TRACKS)) { delete p.log[k].done[d]; delete p.log[k].goal[d]; }
+  for (const k of Object.keys(TRACKS)) delete p.log[k].done[d];
 }
 function toggleDay(p, d, shift) {
   if (shift && lastPick) {
@@ -568,16 +572,13 @@ function moveDays(p, src, delta) {
 
   for (const k of Object.keys(TRACKS)) {
     const lg = p.log[k];
-    const done = {}, goal = {};
+    const done = {};
     src.forEach((d, i) => {                       // 옮길 기록을 먼저 떠낸다
       if (has(lg.done, d)) done[dest[i]] = lg.done[d];
-      if (has(lg.goal, d)) goal[dest[i]] = lg.goal[d];
     });
-    for (const d of src) { delete lg.done[d]; delete lg.goal[d]; }
+    for (const d of src) delete lg.done[d];
     Object.assign(lg.done, done);                 // 목적지에 기록이 있었다면 옮긴 쪽이 이긴다
-    Object.assign(lg.goal, goal);
     for (const d of Object.keys(lg.done)) if (!days.has(d)) delete lg.done[d];
-    for (const d of Object.keys(lg.goal)) if (!days.has(d)) delete lg.goal[d];
   }
   p.days = [...days].sort();
   if (shiftDl) p.deadline = ymd(addDays(parseYmd(p.deadline), delta));
