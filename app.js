@@ -32,8 +32,10 @@ function load() {
   s.weeks = s.weeks || {};                        // 주간 체크리스트 (일요일 날짜가 key)
   s.sort = s.sort || 'added';                     // 사이드바 정렬 방식
   s.entries = (Array.isArray(s.entries) ? s.entries : [])  // 입력 기록 (타임테이블)
-    .filter(e => e && e.delta > 0)                         // 마이너스 기록은 쓰지 않는다
-    .map(e => ({ id: e.id || uid(), ts: e.ts, p: e.p, t: e.t, d: e.d, delta: e.delta }));
+    .filter(e => e && (e.text ? String(e.text).trim() : e.delta > 0))   // 마이너스 기록은 쓰지 않는다
+    .map(e => e.text
+      ? { id: e.id || uid(), ts: e.ts, d: e.d, text: String(e.text) }   // 메모
+      : { id: e.id || uid(), ts: e.ts, p: e.p, t: e.t, d: e.d, delta: e.delta });
   for (const p of s.projects) {
     p.days = p.days || [];
     p.storyboard = !!p.storyboard;
@@ -177,9 +179,12 @@ function renderTimeline(keepInputs) {
 
   const rows = tlRows();
   const list = entriesOf(tlDate);
-  const dayTotal = list.reduce((a, e) => a + e.delta, 0);
+  const work = list.filter(e => !e.text);
+  const notes = list.length - work.length;
+  const dayTotal = work.reduce((a, e) => a + e.delta, 0);
   document.getElementById('tlSum').innerHTML = list.length
-    ? '<span>이 날 입력 <b>' + num(dayTotal) + '컷</b></span><span>' + list.length + '회</span>'
+    ? '<span>이 날 입력 <b>' + num(dayTotal) + '컷</b></span><span>' + work.length + '회' +
+      (notes ? ' · 메모 ' + notes : '') + '</span>'
     : '<span>아직 입력한 기록이 없습니다.</span>';
 
   if (!keepInputs) {
@@ -210,7 +215,15 @@ function renderTimeline(keepInputs) {
   }
 
   const cum = cumulative(list);
+  const acts = '<span class="tl-act">' +
+    '<button data-act="tle-edit" title="수정">&#9998;</button>' +
+    '<button data-act="tle-del" title="삭제">&#10005;</button></span>';
   document.getElementById('tlLog').innerHTML = list.length ? '<ul class="tl-log">' + list.map(e => {
+    if (e.text) {
+      return '<li class="tl-e tl-note" data-id="' + e.id + '">' +
+        '<span class="tl-time">' + fmtTime(e.ts) + '</span>' +
+        '<span class="tl-nt">' + esc(e.text) + '</span>' + acts + '</li>';
+    }
     const p = byId(e.p);
     return '<li class="tl-e" data-id="' + e.id + '">' +
       '<span class="tl-time">' + fmtTime(e.ts) + '</span>' +
@@ -218,10 +231,7 @@ function renderTimeline(keepInputs) {
       '<span class="tl-n">' + esc(p ? p.name : '삭제된 프로젝트') +
         '<small>' + (TRACKS[e.t] || '') + '</small></span>' +
       '<span class="tl-d">+' + num(e.delta) + '<i>컷</i><small>누적 ' + num(cum[e.id]) + '</small></span>' +
-      '<span class="tl-act">' +
-        '<button data-act="tle-edit" title="수정">&#9998;</button>' +
-        '<button data-act="tle-del" title="삭제">&#10005;</button></span>' +
-    '</li>';
+      acts + '</li>';
   }).join('') + '</ul>' : '';
 }
 
@@ -620,6 +630,31 @@ function trimEntries(pid, track, d, amount) {
   state.entries = state.entries.filter(e => e.delta > 0);
 }
 
+/* 시각이 찍힌 메모 기록 */
+function addNote(text, date) {
+  const t = String(text).trim();
+  if (!t) return null;
+  const e = { id: uid(), ts: Date.now(), d: date || tlDate, text: t };
+  state.entries.push(e);
+  save();
+  return e;
+}
+function editNote(id, text) {
+  const e = state.entries.find(x => x.id === id);
+  if (!e) return;
+  const t = String(text).trim();
+  if (t) e.text = t;
+  else state.entries = state.entries.filter(x => x.id !== id);
+  save();
+  render();
+}
+function removeEntry(id) {
+  const e = state.entries.find(x => x.id === id);
+  if (!e) return;
+  if (e.text) { state.entries = state.entries.filter(x => x.id !== id); save(); render(); }
+  else editEntry(id, 0);
+}
+
 /* 기록 한 줄을 고치거나(0이면 삭제) 지운다. 실적 합계도 그만큼 따라 움직인다. */
 function editEntry(id, value) {
   const e = state.entries.find(x => x.id === id);
@@ -649,6 +684,7 @@ function fmtTime(ts) {
 function cumulative(list) {
   const base = {}, run = {}, out = {};
   for (const e of list) {
+    if (e.text) continue;                          // 메모는 누적에서 제외
     const k = e.p + '|' + e.t;
     if (base[k] === undefined) {
       const p = byId(e.p);
@@ -779,26 +815,40 @@ document.getElementById('tlLog').addEventListener('click', e => {
   if (!b) return;
   const li = b.closest('.tl-e');
   const id = li.dataset.id;
-  if (b.dataset.act === 'tle-del') {
-    const en = state.entries.find(x => x.id === id);
-    if (en && confirm('이 기록 ' + num(en.delta) + '컷을 지울까요?\n작업량 합계에서도 빠집니다.')) editEntry(id, 0);
-    return;
-  }
-  const cell = li.querySelector('.tl-d');
-  if (cell.querySelector('input')) return;
   const cur = state.entries.find(x => x.id === id);
   if (!cur) return;
-  cell.innerHTML = '<input class="tl-edit" type="number" min="0" step="1" value="' + cur.delta + '">';
+
+  if (b.dataset.act === 'tle-del') {
+    const msg = cur.text ? '이 메모를 지울까요?' : '이 기록 ' + num(cur.delta) + '컷을 지울까요?\n작업량 합계에서도 빠집니다.';
+    if (confirm(msg)) removeEntry(id);
+    return;
+  }
+
+  const cell = li.querySelector(cur.text ? '.tl-nt' : '.tl-d');
+  if (cell.querySelector('input')) return;
+  cell.innerHTML = cur.text
+    ? '<input class="tl-edit wide" type="text" value="' + esc(cur.text) + '">'
+    : '<input class="tl-edit" type="number" min="0" step="1" value="' + cur.delta + '">';
   const inp = cell.querySelector('input');
   inp.focus();
   inp.select();
   let done = false;
-  const commit = () => { if (done) return; done = true; editEntry(id, inp.value); renderTimeline(); };
+  const commit = () => {
+    if (done) return;
+    done = true;
+    if (cur.text) editNote(id, inp.value); else editEntry(id, inp.value);
+    renderTimeline();
+  };
   inp.addEventListener('keydown', ev => {
     if (ev.key === 'Enter') commit();
     else if (ev.key === 'Escape') { done = true; renderTimeline(); }
   });
   inp.addEventListener('blur', commit);
+});
+
+document.getElementById('tlNote').addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  if (addNote(e.target.value)) { e.target.value = ''; renderTimeline(); }
 });
 
 document.getElementById('sortBar').addEventListener('click', e => {
