@@ -35,7 +35,32 @@ button,input,select{font:inherit;color:inherit}
 .sb-head{padding:22px 20px 16px;border-bottom:1px solid var(--line)}
 .logo{font-size:15px;font-weight:700;letter-spacing:-.02em}
 .sub{font-size:12px;color:var(--muted);margin-top:3px}
+.tabs{flex:none;display:flex;border-bottom:1px solid var(--line);padding:0 12px}
+.tabs button{border:none;background:none;padding:10px 12px;font-size:12.5px;font-weight:600;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
+.tabs button:hover{color:var(--text)}
+.tabs button.on{color:var(--accent);border-bottom-color:var(--accent)}
 .sb-body{flex:1;overflow-y:auto;padding:16px}
+
+/* 타임테이블 */
+.tl-nav{display:flex;align-items:center;gap:6px;margin-bottom:10px}
+.tl-date{flex:1;text-align:center;font-size:13.5px;font-weight:700}
+.nav.sm{width:26px;height:26px;font-size:15px;flex:none}
+.tl-sum{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:var(--muted);background:var(--line-soft);border-radius:9px;padding:8px 11px;margin-bottom:14px}
+.tl-sum b{color:var(--text);font-weight:700}
+.tl-r{border:1px solid var(--line);border-radius:11px;padding:10px 11px;margin-bottom:7px}
+.tl-rh{display:flex;align-items:center;gap:7px;margin-bottom:7px}
+.tl-rh b{font-size:12.5px;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tl-log{list-style:none;display:flex;flex-direction:column;gap:2px}
+.tl-e{display:flex;align-items:flex-start;gap:7px;font-size:11.5px;padding:6px 2px;border-bottom:1px solid var(--line-soft)}
+.tl-e:last-child{border-bottom:none}
+.tl-time{flex:none;color:var(--muted);font-variant-numeric:tabular-nums;font-weight:600;width:34px}
+.tl-dot{flex:none;width:8px;height:8px;border-radius:50%;margin-top:4px}
+.tl-n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.tl-n small{display:block;font-weight:500;color:var(--muted);font-size:10.5px}
+.tl-d{flex:none;text-align:right;font-weight:700;font-variant-numeric:tabular-nums;color:var(--ok)}
+.tl-d.minus{color:var(--danger)}
+.tl-d i{font-style:normal;font-size:10px;font-weight:600;margin-left:1px}
+.tl-d small{display:block;font-weight:500;color:var(--muted);font-size:10.5px}
 .sb-label{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11px;font-weight:600;color:var(--muted);letter-spacing:.06em;margin:0 2px 10px}
 .sortbar{display:flex;gap:1px;background:var(--line);border-radius:7px;padding:1px;overflow:hidden}
 .sortbar button{border:none;background:var(--panel);color:var(--muted);font-size:10.5px;font-weight:600;letter-spacing:0;padding:3px 7px;cursor:pointer;transition:.12s}
@@ -187,7 +212,7 @@ button,input,select{font:inherit;color:inherit}
 .dline{display:flex;align-items:center;gap:9px}
 .dline+.dline{margin-top:7px}
 .dline .tk{font-size:12px;font-weight:700;width:44px;flex:none}
-.dline small{color:var(--muted);font-size:11.5px;flex:1}
+.dline small{color:var(--muted);font-size:11.5px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .drow.due{background:var(--line-soft);border-style:dashed}
 .dsec{font-size:11px;font-weight:600;color:var(--muted);letter-spacing:.05em;margin-top:4px}
 .dl{display:flex;align-items:center;gap:10px;border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:10px 12px;font-size:13.5px;font-weight:600}
@@ -195,8 +220,8 @@ button,input,select{font:inherit;color:inherit}
 .drow .dn{flex:1;min-width:0}
 .drow .dn b{display:block;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .drow .dn small{color:var(--muted);font-size:11.5px}
-.drow input{width:76px;border:1px solid var(--line);background:var(--bg);border-radius:9px;padding:8px 9px;font-size:13px;text-align:right;outline:none}
-.drow input:focus{border-color:var(--accent);background:var(--panel)}
+.dline input{flex:none;width:76px;border:1px solid var(--line);background:var(--bg);border-radius:9px;padding:8px 9px;font-size:13px;text-align:right;outline:none}
+.dline input:focus{border-color:var(--accent);background:var(--panel)}
 .unit{font-size:12px;color:var(--muted)}
 
 @media (max-width:860px){

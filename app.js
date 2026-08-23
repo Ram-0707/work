@@ -20,9 +20,10 @@ const TODAY = ymd(new Date());
 function load() {
   let s = null;
   try { s = JSON.parse(localStorage.getItem(KEY)); } catch (e) { /* 손상된 데이터는 무시 */ }
-  if (!s || !Array.isArray(s.projects)) return { projects: [], weeks: {} };
+  if (!s || !Array.isArray(s.projects)) return { projects: [], weeks: {}, sort: 'added', entries: [] };
   s.weeks = s.weeks || {};                        // 주간 체크리스트 (일요일 날짜가 key)
   s.sort = s.sort || 'added';                     // 사이드바 정렬 방식
+  s.entries = Array.isArray(s.entries) ? s.entries : [];   // 입력 기록 (타임테이블)
   for (const p of s.projects) {
     p.days = p.days || [];
     p.storyboard = !!p.storyboard;
@@ -141,13 +142,73 @@ function sortProjects() {
 /* ── 렌더 ───────────────────────────────── */
 let SCH = {};
 let PSORT = [];
-function render() {
+function render(keepInputs) {
   SCH = allSchedules();
   PSORT = sortProjects();
   renderSidebar();
+  renderTimeline(keepInputs);
   renderCalendar();
   renderTopbar();
   renderBanner();
+}
+
+/* ── 타임테이블 ─────────────────────────── */
+let tlDate = TODAY;
+
+function tlRows() {
+  return PSORT.filter(p => p.days.includes(tlDate));
+}
+
+function renderTimeline(keepInputs) {
+  document.getElementById('tlDateLabel').textContent =
+    fmtShort(tlDate) + ' (' + ['일', '월', '화', '수', '목', '금', '토'][parseYmd(tlDate).getDay()] + ')';
+  document.getElementById('tlToday').style.visibility = tlDate === TODAY ? 'hidden' : '';
+
+  const rows = tlRows();
+  const list = entriesOf(tlDate);
+  const dayTotal = list.reduce((a, e) => a + e.delta, 0);
+  document.getElementById('tlSum').innerHTML = list.length
+    ? '<span>이 날 입력 <b>' + num(dayTotal) + '컷</b></span><span>' + list.length + '회</span>'
+    : '<span>아직 입력한 기록이 없습니다.</span>';
+
+  if (!keepInputs) {
+    document.getElementById('tlInputs').innerHTML = rows.length ? rows.map(p =>
+      '<div class="tl-r" style="border-left:3px solid ' + p.color + '">' +
+        '<div class="tl-rh"><b>' + esc(p.name) + '</b>' + (p.storyboard ? '<span class="tag">콘티</span>' : '') + '</div>' +
+        tracksOf(p).map(t => {
+          const s = SCH[p.id][t.k].byDate[tlDate];
+          return '<div class="dline">' +
+            (t.label ? '<span class="tk">' + t.label + '</span>' : '') +
+            '<small data-tlgoal="' + p.id + ':' + t.k + '">목표 ' + num(s.goal) + '컷</small>' +
+            '<input type="number" min="0" step="1" data-p="' + p.id + '" data-t="' + t.k + '" placeholder="0" value="' +
+              (s.entered ? s.done : '') + '"><span class="unit">컷</span></div>';
+        }).join('') +
+      '</div>').join('')
+      : '<div class="empty">이 날짜에 지정된 작업이 없습니다.</div>';
+  } else {                                        // 입력 중이면 칸은 두고 숫자만 갱신
+    document.querySelectorAll('#tlInputs [data-tlgoal]').forEach(el => {
+      const [pid, tk] = el.dataset.tlgoal.split(':');
+      const s = SCH[pid] && SCH[pid][tk] && SCH[pid][tk].byDate[tlDate];
+      if (s) el.textContent = '목표 ' + num(s.goal) + '컷';
+    });
+    document.querySelectorAll('#tlInputs input[data-p]').forEach(el => {
+      if (el === document.activeElement) return;
+      const s = SCH[el.dataset.p] && SCH[el.dataset.p][el.dataset.t].byDate[tlDate];
+      el.value = s && s.entered ? s.done : '';
+    });
+  }
+
+  document.getElementById('tlLog').innerHTML = list.length ? '<ul class="tl-log">' + list.map(e => {
+    const p = byId(e.p);
+    const label = TRACKS[e.t] ? ' · ' + TRACKS[e.t] : '';
+    return '<li class="tl-e">' +
+      '<span class="tl-time">' + fmtTime(e.ts) + '</span>' +
+      '<span class="tl-dot" style="background:' + (p ? p.color : 'var(--muted)') + '"></span>' +
+      '<span class="tl-n">' + esc(p ? p.name : '삭제된 프로젝트') + '<small>' + label.replace(' · ', '') + '</small></span>' +
+      '<span class="tl-d' + (e.delta < 0 ? ' minus' : '') + '">' + (e.delta > 0 ? '+' : '') + num(e.delta) +
+        '<i>컷</i><small>누적 ' + num(e.to) + '</small></span>' +
+    '</li>';
+  }).join('') + '</ul>' : '';
 }
 
 function renderTopbar() {
@@ -507,16 +568,34 @@ function refreshDayGoals() {
   });
 }
 
-function setDone(pid, track, raw) {
+/* 실적을 바꿀 때마다 이번 입력분(delta)과 시각을 남긴다.
+   10컷이 들어 있는 날에 20을 넣으면 "+10컷"으로 기록된다. */
+function setDone(pid, track, raw, date) {
   const p = byId(pid);
   if (!p) return;
+  const d = date || dayDate;
   const lg = p.log[track];
+  const before = has(lg.done, d) ? Number(lg.done[d]) || 0 : 0;
   const v = String(raw).trim();
-  if (v === '') delete lg.done[dayDate];
-  else lg.done[dayDate] = Math.max(0, parseInt(v, 10) || 0);
+  const after = v === '' ? 0 : Math.max(0, parseInt(v, 10) || 0);
+
+  if (v === '') delete lg.done[d];
+  else lg.done[d] = after;
+
+  if (after !== before) {
+    state.entries.push({ id: uid(), ts: Date.now(), p: pid, t: track, d, delta: after - before, to: after });
+  }
   save();
-  render();
+  render(true);
   refreshDayGoals();
+}
+
+function entriesOf(d) {
+  return state.entries.filter(e => e.d === d).sort((a, b) => a.ts - b.ts);
+}
+function fmtTime(ts) {
+  const t = new Date(ts);
+  return String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
 }
 
 /* ── 캘린더 클릭 동작 ───────────────────── */
@@ -611,6 +690,23 @@ document.getElementById('dNewDeadline').onclick = () => {
   document.getElementById('dMask').hidden = true;
   openProject(null, d);
 };
+
+/* 사이드바 탭 전환 */
+document.getElementById('tabs').addEventListener('click', e => {
+  const b = e.target.closest('[data-tab]');
+  if (!b) return;
+  document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x === b));
+  document.getElementById('paneProjects').hidden = b.dataset.tab !== 'projects';
+  document.getElementById('paneTimeline').hidden = b.dataset.tab !== 'timeline';
+});
+
+document.getElementById('tlPrev').onclick = () => { tlDate = ymd(addDays(parseYmd(tlDate), -1)); renderTimeline(); };
+document.getElementById('tlNext').onclick = () => { tlDate = ymd(addDays(parseYmd(tlDate), 1)); renderTimeline(); };
+document.getElementById('tlToday').onclick = () => { tlDate = TODAY; renderTimeline(); };
+document.getElementById('tlInputs').addEventListener('change', e => {
+  const i = e.target;
+  if (i.dataset.p) setDone(i.dataset.p, i.dataset.t, i.value, tlDate);
+});
 
 document.getElementById('sortBar').addEventListener('click', e => {
   const b = e.target.closest('[data-sort]');
