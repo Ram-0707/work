@@ -14,7 +14,15 @@ let formDeadline = '';
 let dayDate = null;     // 날짜 모달 대상
 const openCards = new Set();   // 사이드바에서 펼쳐 둔 프로젝트
 
-const TODAY = ymd(new Date());
+/* 하루의 경계는 자정이 아니라 새벽 6시.
+   새벽 2시에 한 작업은 전날 몫으로 잡힌다. */
+const DAY_START_HOUR = 6;
+function logicalDate(t) {
+  const d = new Date(t);
+  d.setHours(d.getHours() - DAY_START_HOUR);
+  return d;
+}
+const TODAY = ymd(logicalDate(Date.now()));
 
 /* ── 저장소 ─────────────────────────────── */
 function load() {
@@ -23,7 +31,9 @@ function load() {
   if (!s || !Array.isArray(s.projects)) return { projects: [], weeks: {}, sort: 'added', entries: [] };
   s.weeks = s.weeks || {};                        // 주간 체크리스트 (일요일 날짜가 key)
   s.sort = s.sort || 'added';                     // 사이드바 정렬 방식
-  s.entries = Array.isArray(s.entries) ? s.entries : [];   // 입력 기록 (타임테이블)
+  s.entries = (Array.isArray(s.entries) ? s.entries : [])  // 입력 기록 (타임테이블)
+    .filter(e => e && e.delta > 0)                         // 마이너스 기록은 쓰지 않는다
+    .map(e => ({ id: e.id || uid(), ts: e.ts, p: e.p, t: e.t, d: e.d, delta: e.delta }));
   for (const p of s.projects) {
     p.days = p.days || [];
     p.storyboard = !!p.storyboard;
@@ -120,7 +130,7 @@ function allSchedules() {
 }
 
 /* ── 캘린더 범위 (연속 스크롤) ──────────── */
-let anchor = addDays(sundayOf(new Date()), -8 * 7);   // 화면에 그리는 첫 주(일요일)
+let anchor = addDays(sundayOf(parseYmd(TODAY)), -8 * 7);   // 화면에 그리는 첫 주(일요일)
 let weekCount = 40;
 const MAX_WEEKS = 520;
 let extending = false;
@@ -160,8 +170,9 @@ function tlRows() {
 }
 
 function renderTimeline(keepInputs) {
-  document.getElementById('tlDateLabel').textContent =
-    fmtShort(tlDate) + ' (' + ['일', '월', '화', '수', '목', '금', '토'][parseYmd(tlDate).getDay()] + ')';
+  const lbl = document.getElementById('tlDateLabel');
+  lbl.textContent = fmtShort(tlDate) + ' (' + ['일', '월', '화', '수', '목', '금', '토'][parseYmd(tlDate).getDay()] + ')';
+  lbl.title = '하루 기준: 오전 ' + DAY_START_HOUR + '시 ~ 다음날 오전 ' + DAY_START_HOUR + '시';
   document.getElementById('tlToday').style.visibility = tlDate === TODAY ? 'hidden' : '';
 
   const rows = tlRows();
@@ -198,15 +209,19 @@ function renderTimeline(keepInputs) {
     });
   }
 
+  const cum = cumulative(list);
   document.getElementById('tlLog').innerHTML = list.length ? '<ul class="tl-log">' + list.map(e => {
     const p = byId(e.p);
-    const label = TRACKS[e.t] ? ' · ' + TRACKS[e.t] : '';
-    return '<li class="tl-e">' +
-      '<span class="tl-time">' + fmtTime(e.ts) + '</span>' +
+    const late = ymd(new Date(e.ts)) !== e.d;     // 자정 넘겨 입력한 기록
+    return '<li class="tl-e" data-id="' + e.id + '">' +
+      '<span class="tl-time">' + fmtTime(e.ts) + (late ? '<em>+1일</em>' : '') + '</span>' +
       '<span class="tl-dot" style="background:' + (p ? p.color : 'var(--muted)') + '"></span>' +
-      '<span class="tl-n">' + esc(p ? p.name : '삭제된 프로젝트') + '<small>' + label.replace(' · ', '') + '</small></span>' +
-      '<span class="tl-d' + (e.delta < 0 ? ' minus' : '') + '">' + (e.delta > 0 ? '+' : '') + num(e.delta) +
-        '<i>컷</i><small>누적 ' + num(e.to) + '</small></span>' +
+      '<span class="tl-n">' + esc(p ? p.name : '삭제된 프로젝트') +
+        '<small>' + (TRACKS[e.t] || '') + '</small></span>' +
+      '<span class="tl-d">+' + num(e.delta) + '<i>컷</i><small>누적 ' + num(cum[e.id]) + '</small></span>' +
+      '<span class="tl-act">' +
+        '<button data-act="tle-edit" title="수정">&#9998;</button>' +
+        '<button data-act="tle-del" title="삭제">&#10005;</button></span>' +
     '</li>';
   }).join('') + '</ul>' : '';
 }
@@ -579,15 +594,49 @@ function setDone(pid, track, raw, date) {
   const v = String(raw).trim();
   const after = v === '' ? 0 : Math.max(0, parseInt(v, 10) || 0);
 
+  if (after > before) {
+    state.entries.push({ id: uid(), ts: Date.now(), p: pid, t: track, d, delta: after - before });
+  } else if (after < before) {
+    trimEntries(pid, track, d, before - after);   // 마이너스 대신 최근 기록부터 깎는다
+  }
   if (v === '') delete lg.done[d];
   else lg.done[d] = after;
 
-  if (after !== before) {
-    state.entries.push({ id: uid(), ts: Date.now(), p: pid, t: track, d, delta: after - before, to: after });
-  }
   save();
   render(true);
   refreshDayGoals();
+}
+
+/* 줄어든 만큼을 최근 기록부터 거꾸로 깎아 낸다 */
+function trimEntries(pid, track, d, amount) {
+  const list = state.entries
+    .filter(e => e.p === pid && e.t === track && e.d === d)
+    .sort((a, b) => b.ts - a.ts);
+  for (const e of list) {
+    if (amount <= 0) break;
+    const cut = Math.min(e.delta, amount);
+    e.delta -= cut;
+    amount -= cut;
+  }
+  state.entries = state.entries.filter(e => e.delta > 0);
+}
+
+/* 기록 한 줄을 고치거나(0이면 삭제) 지운다. 실적 합계도 그만큼 따라 움직인다. */
+function editEntry(id, value) {
+  const e = state.entries.find(x => x.id === id);
+  const p = e && byId(e.p);
+  if (!p) return;
+  const n = Math.max(0, parseInt(value, 10) || 0);
+  if (n === e.delta) return;
+  const lg = p.log[e.t];
+  const cur = has(lg.done, e.d) ? Number(lg.done[e.d]) || 0 : 0;
+  const next = Math.max(0, cur + (n - e.delta));
+  if (next === 0) delete lg.done[e.d];
+  else lg.done[e.d] = next;
+  if (n === 0) state.entries = state.entries.filter(x => x.id !== id);
+  else e.delta = n;
+  save();
+  render();
 }
 
 function entriesOf(d) {
@@ -596,6 +645,23 @@ function entriesOf(d) {
 function fmtTime(ts) {
   const t = new Date(ts);
   return String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
+}
+/* 기록별 누적값 — 기록 없이 들어 있던 값(예전 데이터)을 바닥에 깔고 더해 나간다 */
+function cumulative(list) {
+  const base = {}, run = {}, out = {};
+  for (const e of list) {
+    const k = e.p + '|' + e.t;
+    if (base[k] === undefined) {
+      const p = byId(e.p);
+      const done = p && has(p.log[e.t].done, e.d) ? Number(p.log[e.t].done[e.d]) || 0 : 0;
+      const sum = list.filter(x => x.p === e.p && x.t === e.t).reduce((a, x) => a + x.delta, 0);
+      base[k] = Math.max(0, done - sum);
+      run[k] = base[k];
+    }
+    run[k] += e.delta;
+    out[e.id] = run[k];
+  }
+  return out;
 }
 
 /* ── 캘린더 클릭 동작 ───────────────────── */
@@ -706,6 +772,34 @@ document.getElementById('tlToday').onclick = () => { tlDate = TODAY; renderTimel
 document.getElementById('tlInputs').addEventListener('change', e => {
   const i = e.target;
   if (i.dataset.p) setDone(i.dataset.p, i.dataset.t, i.value, tlDate);
+});
+
+/* 기록 수정 · 삭제 */
+document.getElementById('tlLog').addEventListener('click', e => {
+  const b = e.target.closest('[data-act]');
+  if (!b) return;
+  const li = b.closest('.tl-e');
+  const id = li.dataset.id;
+  if (b.dataset.act === 'tle-del') {
+    const en = state.entries.find(x => x.id === id);
+    if (en && confirm('이 기록 ' + num(en.delta) + '컷을 지울까요?\n작업량 합계에서도 빠집니다.')) editEntry(id, 0);
+    return;
+  }
+  const cell = li.querySelector('.tl-d');
+  if (cell.querySelector('input')) return;
+  const cur = state.entries.find(x => x.id === id);
+  if (!cur) return;
+  cell.innerHTML = '<input class="tl-edit" type="number" min="0" step="1" value="' + cur.delta + '">';
+  const inp = cell.querySelector('input');
+  inp.focus();
+  inp.select();
+  let done = false;
+  const commit = () => { if (done) return; done = true; editEntry(id, inp.value); renderTimeline(); };
+  inp.addEventListener('keydown', ev => {
+    if (ev.key === 'Enter') commit();
+    else if (ev.key === 'Escape') { done = true; renderTimeline(); }
+  });
+  inp.addEventListener('blur', commit);
 });
 
 document.getElementById('sortBar').addEventListener('click', e => {
