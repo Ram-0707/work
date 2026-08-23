@@ -127,11 +127,14 @@ function renderTopbar() {
   let goal = 0, done = 0;
   for (const p of state.projects) {
     for (const t of tracksOf(p)) {
+      if (t.k === 'draft') continue;              // 콘티 초안은 오늘 합계에서 뺀다
       const s = SCH[p.id][t.k].byDate[TODAY];
       if (s) { goal += s.goal; done += s.done; }
     }
   }
-  document.getElementById('todaySum').innerHTML =
+  const sum = document.getElementById('todaySum');
+  sum.title = '콘티 프로젝트는 클린업만 합산합니다. 초안은 제외됩니다.';
+  sum.innerHTML =
     '<span>오늘 목표 <b>' + num(goal) + '컷</b></span>' +
     '<span>완료 <b>' + num(done) + '컷</b></span>' +
     '<span>남은 <b>' + num(Math.max(0, goal - done)) + '컷</b></span>';
