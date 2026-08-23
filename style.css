@@ -36,7 +36,11 @@ button,input,select{font:inherit;color:inherit}
 .logo{font-size:15px;font-weight:700;letter-spacing:-.02em}
 .sub{font-size:12px;color:var(--muted);margin-top:3px}
 .sb-body{flex:1;overflow-y:auto;padding:16px}
-.sb-label{font-size:11px;font-weight:600;color:var(--muted);letter-spacing:.06em;margin:0 2px 10px}
+.sb-label{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11px;font-weight:600;color:var(--muted);letter-spacing:.06em;margin:0 2px 10px}
+.sortbar{display:flex;gap:1px;background:var(--line);border-radius:7px;padding:1px;overflow:hidden}
+.sortbar button{border:none;background:var(--panel);color:var(--muted);font-size:10.5px;font-weight:600;letter-spacing:0;padding:3px 7px;cursor:pointer;transition:.12s}
+.sortbar button:hover{color:var(--text)}
+.sortbar button.on{background:var(--accent);color:#fff}
 .sb-foot{padding:14px 16px;border-top:1px solid var(--line)}
 .sb-foot>.btn{width:100%}
 .foot-row{display:flex;gap:6px;margin-top:7px}
@@ -90,13 +94,14 @@ button,input,select{font:inherit;color:inherit}
 .bdot{width:9px;height:9px;border-radius:50%;flex:none}
 .bhint{font-weight:400;color:var(--muted);font-size:12px;flex:1}
 
-.week-head{flex:none;display:grid;grid-template-columns:repeat(7,minmax(0,1fr)) minmax(130px,1.3fr);padding:7px 22px 6px;background:var(--panel);border-bottom:1px solid var(--line)}
+/* 오른쪽 여백에 캘린더의 스크롤바 폭을 더해 요일과 날짜 열을 정확히 맞춘다 */
+.week-head{flex:none;display:grid;grid-template-columns:repeat(7,minmax(0,1fr)) minmax(130px,1.3fr);padding:7px 22px 6px;padding-right:calc(22px + var(--sbw,0px));background:var(--panel);border-bottom:1px solid var(--line)}
 .week-head div{text-align:center;font-size:11.5px;font-weight:600;color:var(--muted)}
 .week-head .sun{color:#e5484d}
 .week-head .sat{color:#3b82f6}
 .week-head .wk{font-size:10.5px;letter-spacing:.02em}
 
-.cal-wrap{flex:1;overflow-y:auto;overflow-x:hidden;padding:0 22px 40px;overscroll-behavior:contain}
+.cal-wrap{flex:1;overflow-y:auto;overflow-x:hidden;scrollbar-gutter:stable;padding:0 22px 40px;overscroll-behavior:contain}
 .cal{display:flex;flex-direction:column;gap:1px;background:var(--line)}
 .week{display:grid;grid-template-columns:repeat(7,minmax(0,1fr)) minmax(130px,1.3fr);gap:1px;background:var(--line)}
 

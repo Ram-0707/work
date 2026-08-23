@@ -1,7 +1,8 @@
 /* 웹툰 작업량 관리 — 컷 단위 자동 분배 캘린더 */
 
 const KEY = 'webtoon-workload-v1';
-const PALETTE = ['#EF4444', '#F97316', '#F59E0B', '#22C55E', '#06B6D4', '#3B82F6', '#8B5CF6', '#EC4899', '#0EA5E9', '#64748B'];
+const PALETTE = ['#EF4444', '#F97316', '#F59E0B', '#22C55E', '#06B6D4', '#3B82F6', '#8B5CF6', '#EC4899', '#0EA5E9', '#737373'];
+const OLD_COLORS = { '#64748B': '#737373' };   // 푸른 기가 돌던 회색을 무채색으로
 const TRACKS = { main: '', draft: '초안', clean: '클린업' };
 
 let state = load();
@@ -21,9 +22,11 @@ function load() {
   try { s = JSON.parse(localStorage.getItem(KEY)); } catch (e) { /* 손상된 데이터는 무시 */ }
   if (!s || !Array.isArray(s.projects)) return { projects: [], weeks: {} };
   s.weeks = s.weeks || {};                        // 주간 체크리스트 (일요일 날짜가 key)
+  s.sort = s.sort || 'added';                     // 사이드바 정렬 방식
   for (const p of s.projects) {
     p.days = p.days || [];
     p.storyboard = !!p.storyboard;
+    if (OLD_COLORS[p.color]) p.color = OLD_COLORS[p.color];
     if (!p.log) p.log = {};
     if (p.done || p.goal) {                       // 콘티 기능 이전 데이터 이행
       p.log.main = { done: p.done || {}, goal: p.goal || {} };
@@ -113,10 +116,25 @@ const MAX_WEEKS = 520;
 let extending = false;
 let labelYm = null;
 
+/* ── 정렬 ───────────────────────────────── */
+function sortProjects() {
+  const arr = state.projects.slice();             // 등록 순서 자체는 건드리지 않는다
+  const byName = (a, b) => a.name.localeCompare(b.name, 'ko');
+  if (state.sort === 'color') {
+    const rank = p => (PALETTE.indexOf(p.color) + 1) || 99;
+    arr.sort((a, b) => rank(a) - rank(b) || byName(a, b));
+  } else if (state.sort === 'due') {
+    arr.sort((a, b) => (a.deadline || '9999-99-99').localeCompare(b.deadline || '9999-99-99') || byName(a, b));
+  }
+  return arr;
+}
+
 /* ── 렌더 ───────────────────────────────── */
 let SCH = {};
+let PSORT = [];
 function render() {
   SCH = allSchedules();
+  PSORT = sortProjects();
   renderSidebar();
   renderCalendar();
   renderTopbar();
@@ -141,12 +159,14 @@ function renderTopbar() {
 }
 
 function renderSidebar() {
+  document.querySelectorAll('#sortBar button').forEach(b =>
+    b.classList.toggle('on', b.dataset.sort === state.sort));
   const el = document.getElementById('projects');
   if (!state.projects.length) {
     el.innerHTML = '<div class="empty">아직 프로젝트가 없습니다.<br>아래 버튼으로 추가해 주세요.</div>';
     return;
   }
-  el.innerHTML = state.projects.map(p => {
+  el.innerHTML = PSORT.map(p => {
     const tracks = tracksOf(p);
     const active = mode && mode.id === p.id;
     const trk = tracks.map(t => {
@@ -265,7 +285,7 @@ function renderCalendar(keepView) {
       const dlPick = target && mode.type === 'deadline' && target.deadline === d;
 
       let chips = '', flags = '', missed = false;
-      for (const p of state.projects) {
+      for (const p of PSORT) {
         if (p.deadline === d) flags += '<span class="flag" style="background:' + p.color + '">마감</span>';
         if (!p.days.includes(d)) continue;
         for (const t of tracksOf(p)) {
@@ -439,8 +459,8 @@ function openDay(d) {
 
 function renderDayBody() {
   const d = dayDate;
-  const rows = state.projects.filter(p => p.days.includes(d));
-  const dues = state.projects.filter(p => p.deadline === d);
+  const rows = PSORT.filter(p => p.days.includes(d));
+  const dues = PSORT.filter(p => p.deadline === d);
 
   let html = rows.length ? rows.map(p => {
     const lines = tracksOf(p).map(t => {
@@ -590,6 +610,14 @@ document.getElementById('dNewDeadline').onclick = () => {
   document.getElementById('dMask').hidden = true;
   openProject(null, d);
 };
+
+document.getElementById('sortBar').addEventListener('click', e => {
+  const b = e.target.closest('[data-sort]');
+  if (!b || b.dataset.sort === state.sort) return;
+  state.sort = b.dataset.sort;
+  save();
+  render();
+});
 
 document.getElementById('fColors').addEventListener('click', e => {
   const b = e.target.closest('[data-color]');
@@ -911,5 +939,12 @@ document.addEventListener('keydown', e => {
   }
 });
 
+/* 캘린더 스크롤바 폭을 요일 헤더 여백에 반영 */
+function syncGutter() {
+  document.documentElement.style.setProperty('--sbw', (wrap.offsetWidth - wrap.clientWidth) + 'px');
+}
+window.addEventListener('resize', syncGutter);
+
 render();
+syncGutter();
 scrollToDate(TODAY);
