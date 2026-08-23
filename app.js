@@ -212,9 +212,8 @@ function renderTimeline(keepInputs) {
   const cum = cumulative(list);
   document.getElementById('tlLog').innerHTML = list.length ? '<ul class="tl-log">' + list.map(e => {
     const p = byId(e.p);
-    const late = ymd(new Date(e.ts)) !== e.d;     // 자정 넘겨 입력한 기록
     return '<li class="tl-e" data-id="' + e.id + '">' +
-      '<span class="tl-time">' + fmtTime(e.ts) + (late ? '<em>+1일</em>' : '') + '</span>' +
+      '<span class="tl-time">' + fmtTime(e.ts) + '</span>' +
       '<span class="tl-dot" style="background:' + (p ? p.color : 'var(--muted)') + '"></span>' +
       '<span class="tl-n">' + esc(p ? p.name : '삭제된 프로젝트') +
         '<small>' + (TRACKS[e.t] || '') + '</small></span>' +

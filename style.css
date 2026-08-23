@@ -55,7 +55,6 @@ button,input,select{font:inherit;color:inherit}
 .tl-e:last-child{border-bottom:none}
 .tl-e:hover{background:var(--line-soft)}
 .tl-time{flex:none;color:var(--muted);font-variant-numeric:tabular-nums;font-weight:600;width:34px}
-.tl-time em{display:block;font-style:normal;font-size:9px;color:var(--accent);font-weight:700}
 .tl-act{flex:none;display:flex;gap:1px;opacity:0;transition:opacity .12s}
 .tl-e:hover .tl-act,.tl-act:focus-within{opacity:1}
 .tl-act button{border:none;background:none;color:var(--muted);cursor:pointer;font-size:10px;line-height:1;padding:3px}
