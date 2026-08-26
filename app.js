@@ -122,6 +122,16 @@ function schedule(p, track) {
   }
   return { byDate, target, doneSum, remaining, openCount, total };
 }
+/* 그 날짜 이전까지 끝낸 누적 컷수 — 입력값은 "몇 번째 컷까지"라서 이 값을 뺀다 */
+function prevTotal(p, track, date) {
+  const lg = p.log[track];
+  let sum = 0;
+  for (const d of Object.keys(lg.done)) {
+    if (d < date) sum += Number(lg.done[d]) || 0;
+  }
+  return sum;
+}
+
 function allSchedules() {
   const m = {};
   for (const p of state.projects) {
@@ -164,6 +174,41 @@ function render(keepInputs) {
   renderBanner();
 }
 
+/* ── 작업량 입력 줄 (날짜 모달 · 타임테이블 공용) ──
+   입력칸은 "몇 번째 컷까지 했는지"를 받는다. */
+function hintOf(p, tk, d) {
+  const s = SCH[p.id][tk].byDate[d];
+  const prev = prevTotal(p, tk, d);
+  return '목표 ' + num(prev + s.goal) + '번째 · 오늘 ' + num(s.done) + '컷' + (s.missed ? ' · 미입력' : '');
+}
+function inputRow(p, t, d) {
+  const s = SCH[p.id][t.k].byDate[d];
+  const prev = prevTotal(p, t.k, d);
+  return '<div class="dline">' +
+      (t.label ? '<span class="tk">' + t.label + '</span>' : '') +
+      '<span class="dgap"></span>' +
+      '<input type="number" min="0" step="1" data-p="' + p.id + '" data-t="' + t.k + '"' +
+        ' placeholder="' + prev + '" value="' + (s.entered ? prev + s.done : '') + '">' +
+      '<span class="unit">번째</span></div>' +
+    '<div class="dhint" data-goal="' + p.id + ':' + t.k + '">' + hintOf(p, t.k, d) + '</div>';
+}
+/* 입력 중에는 칸을 그대로 두고 안내 문구와 다른 칸 값만 맞춘다 */
+function refreshRows(root, d) {
+  root.querySelectorAll('[data-goal]').forEach(el => {
+    const [pid, tk] = el.dataset.goal.split(':');
+    const p = byId(pid);
+    if (p && SCH[pid] && SCH[pid][tk]) el.textContent = hintOf(p, tk, d);
+  });
+  root.querySelectorAll('input[data-p]').forEach(el => {
+    if (el === document.activeElement) return;
+    const p = byId(el.dataset.p);
+    const s = p && SCH[el.dataset.p][el.dataset.t].byDate[d];
+    const prev = p ? prevTotal(p, el.dataset.t, d) : 0;
+    el.placeholder = prev;
+    el.value = s && s.entered ? prev + s.done : '';
+  });
+}
+
 /* ── 타임테이블 ─────────────────────────── */
 let tlDate = TODAY;
 
@@ -191,27 +236,11 @@ function renderTimeline(keepInputs) {
     document.getElementById('tlInputs').innerHTML = rows.length ? rows.map(p =>
       '<div class="tl-r" style="border-left:3px solid ' + p.color + '">' +
         '<div class="tl-rh"><b>' + esc(p.name) + '</b>' + (p.storyboard ? '<span class="tag">콘티</span>' : '') + '</div>' +
-        tracksOf(p).map(t => {
-          const s = SCH[p.id][t.k].byDate[tlDate];
-          return '<div class="dline">' +
-            (t.label ? '<span class="tk">' + t.label + '</span>' : '') +
-            '<small data-tlgoal="' + p.id + ':' + t.k + '">목표 ' + num(s.goal) + '컷</small>' +
-            '<input type="number" min="0" step="1" data-p="' + p.id + '" data-t="' + t.k + '" placeholder="0" value="' +
-              (s.entered ? s.done : '') + '"><span class="unit">컷</span></div>';
-        }).join('') +
+        tracksOf(p).map(t => inputRow(p, t, tlDate)).join('') +
       '</div>').join('')
       : '<div class="empty">이 날짜에 지정된 작업이 없습니다.</div>';
-  } else {                                        // 입력 중이면 칸은 두고 숫자만 갱신
-    document.querySelectorAll('#tlInputs [data-tlgoal]').forEach(el => {
-      const [pid, tk] = el.dataset.tlgoal.split(':');
-      const s = SCH[pid] && SCH[pid][tk] && SCH[pid][tk].byDate[tlDate];
-      if (s) el.textContent = '목표 ' + num(s.goal) + '컷';
-    });
-    document.querySelectorAll('#tlInputs input[data-p]').forEach(el => {
-      if (el === document.activeElement) return;
-      const s = SCH[el.dataset.p] && SCH[el.dataset.p][el.dataset.t].byDate[tlDate];
-      el.value = s && s.entered ? s.done : '';
-    });
+  } else {
+    refreshRows(document.getElementById('tlInputs'), tlDate);
   }
 
   const cum = cumulative(list);
@@ -557,15 +586,7 @@ function renderDayBody() {
   const dues = PSORT.filter(p => p.deadline === d);
 
   let html = rows.length ? rows.map(p => {
-    const lines = tracksOf(p).map(t => {
-      const s = SCH[p.id][t.k].byDate[d];
-      return '<div class="dline">' +
-        (t.label ? '<span class="tk">' + t.label + '</span>' : '') +
-        '<small data-goal="' + p.id + ':' + t.k + '">목표 ' + num(s.goal) + '컷' + (s.missed ? ' · 미입력' : '') + '</small>' +
-        '<input type="number" min="0" step="1" data-p="' + p.id + '" data-t="' + t.k + '" placeholder="0" value="' +
-          (s.entered ? s.done : '') + '"><span class="unit">컷</span>' +
-      '</div>';
-    }).join('');
+    const lines = tracksOf(p).map(t => inputRow(p, t, d)).join('');
     return '<div class="drow" style="border-left:3px solid ' + p.color + '">' +
       '<div class="dtop"><b>' + esc(p.name) + '</b>' + (p.storyboard ? '<span class="tag">콘티</span>' : '') +
         '<button class="icon" data-act="unassign" data-id="' + p.id + '" title="이 날짜를 작업일에서 제외">&#10005;</button></div>' +
@@ -583,13 +604,9 @@ function renderDayBody() {
   document.getElementById('dBody').innerHTML = html;
 }
 
-/* 입력 중 포커스가 날아가지 않도록 목표 텍스트만 갱신한다 */
+/* 입력 중 포커스가 날아가지 않도록 안내 문구만 갱신한다 */
 function refreshDayGoals() {
-  document.querySelectorAll('#dBody [data-goal]').forEach(el => {
-    const [pid, tk] = el.dataset.goal.split(':');
-    const s = SCH[pid] && SCH[pid][tk] && SCH[pid][tk].byDate[dayDate];
-    if (s) el.textContent = '목표 ' + num(s.goal) + '컷' + (s.missed ? ' · 미입력' : '');
-  });
+  if (dayDate) refreshRows(document.getElementById('dBody'), dayDate);
 }
 
 /* 실적을 바꿀 때마다 이번 입력분(delta)과 시각을 남긴다.
@@ -601,7 +618,8 @@ function setDone(pid, track, raw, date) {
   const lg = p.log[track];
   const before = has(lg.done, d) ? Number(lg.done[d]) || 0 : 0;
   const v = String(raw).trim();
-  const after = v === '' ? 0 : Math.max(0, parseInt(v, 10) || 0);
+  // 입력값은 "몇 번째 컷까지"이므로 전날까지의 누적을 빼면 그날 한 양이 된다
+  const after = v === '' ? 0 : Math.max(0, (parseInt(v, 10) || 0) - prevTotal(p, track, d));
 
   if (after > before) {
     state.entries.push({ id: uid(), ts: Date.now(), p: pid, t: track, d, delta: after - before });
