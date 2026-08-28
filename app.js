@@ -11,7 +11,6 @@ let lastPick = null;    // Shift 범위 선택 기준일
 let editingId = null;   // 프로젝트 모달 편집 대상
 let formColor = PALETTE[0];
 let formDeadline = '';
-let dayDate = null;     // 날짜 모달 대상
 const openCards = new Set();   // 사이드바에서 펼쳐 둔 프로젝트
 
 /* 하루의 경계는 자정이 아니라 새벽 6시.
@@ -237,7 +236,8 @@ function renderTimeline(keepInputs) {
   if (!keepInputs) {
     document.getElementById('tlInputs').innerHTML = rows.length ? rows.map(p =>
       '<div class="tl-r" style="border-left:3px solid ' + p.color + '">' +
-        '<div class="tl-rh"><b>' + esc(p.name) + '</b>' + (p.storyboard ? '<span class="tag">콘티</span>' : '') + '</div>' +
+        '<div class="tl-rh"><b>' + esc(p.name) + '</b>' +
+          '<button class="icon sm" data-edit="' + p.id + '" title="프로젝트 수정 (총 컷수 등)">&#9998;</button></div>' +
         tracksOf(p).map(t => inputRow(p, t, tlDate)).join('') +
       '</div>').join('')
       : '<div class="empty">이 날짜에 지정된 작업이 없습니다.</div>';
@@ -253,7 +253,8 @@ function renderTimeline(keepInputs) {
     if (e.text) {
       return '<li class="tl-e tl-note" data-id="' + e.id + '">' +
         '<span class="tl-time">' + fmtTime(e.ts) + '</span>' +
-        '<span class="tl-nt">' + esc(e.text) + '</span>' + acts + '</li>';
+        '<span class="tl-dot memo"></span>' +
+        '<span class="tl-n tl-nt">' + esc(e.text) + '</span>' + acts + '</li>';
     }
     const p = byId(e.p);
     return '<li class="tl-e" data-id="' + e.id + '">' +
@@ -570,48 +571,12 @@ function deleteProject() {
 }
 
 /* ── 날짜 모달 ──────────────────────────── */
-function openDay(d) {
-  dayDate = d;
-  document.getElementById('dTitle').textContent = fmtFull(d);
-  renderDayBody();
-  document.getElementById('dMask').hidden = false;
-}
-
-function renderDayBody() {
-  const d = dayDate;
-  const rows = PSORT.filter(p => p.days.includes(d));
-  const dues = PSORT.filter(p => p.deadline === d);
-
-  let html = rows.length ? rows.map(p => {
-    const lines = tracksOf(p).map(t => inputRow(p, t, d)).join('');
-    return '<div class="drow" style="border-left:3px solid ' + p.color + '">' +
-      '<div class="dtop"><b>' + esc(p.name) + '</b>' + (p.storyboard ? '<span class="tag">콘티</span>' : '') +
-        '<button class="icon" data-act="unassign" data-id="' + p.id + '" title="이 날짜를 작업일에서 제외">&#10005;</button></div>' +
-      lines + '</div>';
-  }).join('') : '<div class="empty">이 날짜에 지정된 작업이 없습니다.<br>프로젝트의 <b>작업일</b> 버튼으로 날짜를 지정하세요.</div>';
-
-  if (dues.length) {
-    html += '<div class="dsec">이 날짜가 마감</div>' + dues.map(p =>
-      '<div class="drow due"><span class="dot" style="background:' + p.color + '"></span>' +
-      '<div class="dn"><b>' + esc(p.name) + '</b><small>총 ' + num(p.totalCuts) + '컷' +
-        (p.storyboard ? ' · 초안 + 클린업' : '') + '</small></div>' +
-      '<button class="icon" data-act="undue" data-id="' + p.id + '" title="마감일 해제">&#10005;</button></div>'
-    ).join('');
-  }
-  document.getElementById('dBody').innerHTML = html;
-}
-
-/* 입력 중 포커스가 날아가지 않도록 안내 문구만 갱신한다 */
-function refreshDayGoals() {
-  if (dayDate) refreshRows(document.getElementById('dBody'), dayDate);
-}
-
 /* 실적을 바꿀 때마다 이번 입력분(delta)과 시각을 남긴다.
    10컷이 들어 있는 날에 20을 넣으면 "+10컷"으로 기록된다. */
 function setDone(pid, track, raw, date) {
   const p = byId(pid);
   if (!p) return;
-  const d = date || dayDate;
+  const d = date;
   const lg = p.log[track];
   const before = has(lg.done, d) ? Number(lg.done[d]) || 0 : 0;
   const v = String(raw).trim();
@@ -628,7 +593,6 @@ function setDone(pid, track, raw, date) {
 
   save();
   render(true);
-  refreshDayGoals();
 }
 
 /* 줄어든 만큼을 최근 기록부터 거꾸로 깎아 낸다 */
@@ -801,24 +765,33 @@ document.getElementById('addProject').onclick = () => openProject(null, '');
 document.getElementById('bannerDone').onclick = () => { mode = null; lastPick = null; render(); };
 document.getElementById('pSave').onclick = saveProject;
 document.getElementById('pDelete').onclick = deleteProject;
-document.getElementById('dNewDeadline').onclick = () => {
-  const d = dayDate;
-  document.getElementById('dMask').hidden = true;
-  openProject(null, d);
-};
+document.getElementById('tlNewDeadline').onclick = () => openProject(null, tlDate);
 
 /* 사이드바 탭 전환 */
+function setTab(name) {
+  document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x.dataset.tab === name));
+  document.getElementById('paneProjects').hidden = name !== 'projects';
+  document.getElementById('paneTimeline').hidden = name !== 'timeline';
+}
+/* 캘린더에서 날짜를 누르면 타임테이블을 그 날짜로 옮긴다 */
+function openTimelineDay(d) {
+  tlDate = d;
+  setTab('timeline');
+  renderTimeline();
+  document.querySelector('.sb-body').scrollTop = 0;
+}
 document.getElementById('tabs').addEventListener('click', e => {
   const b = e.target.closest('[data-tab]');
-  if (!b) return;
-  document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x === b));
-  document.getElementById('paneProjects').hidden = b.dataset.tab !== 'projects';
-  document.getElementById('paneTimeline').hidden = b.dataset.tab !== 'timeline';
+  if (b) setTab(b.dataset.tab);
 });
 
 document.getElementById('tlPrev').onclick = () => { tlDate = ymd(addDays(parseYmd(tlDate), -1)); renderTimeline(); };
 document.getElementById('tlNext').onclick = () => { tlDate = ymd(addDays(parseYmd(tlDate), 1)); renderTimeline(); };
 document.getElementById('tlToday').onclick = () => { tlDate = TODAY; renderTimeline(); };
+document.getElementById('tlInputs').addEventListener('click', e => {
+  const b = e.target.closest('[data-edit]');
+  if (b) openProject(b.dataset.edit);
+});
 document.getElementById('tlInputs').addEventListener('change', e => {
   const i = e.target;
   if (i.dataset.p) setDone(i.dataset.p, i.dataset.t, i.value, tlDate);
@@ -900,7 +873,7 @@ document.getElementById('cal').addEventListener('click', e => {
   const cell = e.target.closest('.cell');
   if (!cell) return;
   const d = cell.dataset.date;
-  if (!mode) { openDay(d); return; }
+  if (!mode) { openTimelineDay(d); return; }
   const p = byId(mode.id);
   if (!p) { mode = null; render(); return; }
   if (mode.type === 'days') toggleDay(p, d, e.shiftKey);
@@ -1157,26 +1130,6 @@ document.getElementById('importFile').addEventListener('change', e => {
   const f = e.target.files[0];
   if (f) importData(f);
   e.target.value = '';                            // 같은 파일을 다시 골라도 동작하도록
-});
-
-document.getElementById('dBody').addEventListener('change', e => {
-  const i = e.target;
-  if (i.dataset.p) setDone(i.dataset.p, i.dataset.t, i.value);
-});
-document.getElementById('dBody').addEventListener('click', e => {
-  const b = e.target.closest('[data-act]');
-  if (!b) return;
-  const p = byId(b.dataset.id);
-  if (!p) return;
-  if (b.dataset.act === 'unassign') {
-    p.days = p.days.filter(x => x !== dayDate);
-    clearDay(p, dayDate);
-  } else if (b.dataset.act === 'undue') {
-    p.deadline = '';
-  }
-  save();
-  render();
-  renderDayBody();
 });
 
 document.addEventListener('click', e => {
