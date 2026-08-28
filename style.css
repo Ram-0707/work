@@ -178,10 +178,11 @@ button,input,select{font:inherit;color:inherit}
 .chip{display:block;border-radius:7px;padding:4px 7px 5px;margin-bottom:4px;font-size:11px;line-height:1.45;border-left:3px solid}
 .chip .cn{display:block;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:1px}
 .chip .cline{display:flex;justify-content:space-between;gap:6px;font-variant-numeric:tabular-nums;overflow:hidden}
-.chip .cline>span{color:var(--muted);font-weight:500;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.chip .cline b{font-weight:700;white-space:nowrap}
+.chip .cline>span{flex:1 1 auto;min-width:0;color:var(--muted);font-weight:500;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chip .cline b{flex:0 0 auto;font-weight:700;white-space:nowrap}
 .chip .cline.na b{color:var(--muted);font-weight:600}
-.chip .cline.ok b::after{content:" \2713";color:var(--ok)}
+.chip .cline.ok b{color:var(--ok)}
+.chip .cline.fin>span{color:var(--ok);font-weight:700}
 .chip .grp+.grp{margin-top:2px;padding-top:2px;border-top:1px dashed rgba(128,138,158,.35)}
 .chip[draggable="true"]{cursor:grab}
 .chip[draggable="true"]:active{cursor:grabbing}

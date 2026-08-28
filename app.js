@@ -106,6 +106,7 @@ function schedule(p, track) {
   }
   const remaining = Math.max(0, total - doneSum);
   const target = openCount ? Math.ceil(remaining / openCount) : 0;
+  const finished = total > 0 && remaining === 0;   // 총량을 다 채웠으면 남은 날은 할 일이 없다
 
   const byDate = {};
   let left = total, used = 0;
@@ -117,10 +118,10 @@ function schedule(p, track) {
       left = Math.max(0, left - done);
       used++;
     } else {
-      byDate[d] = { goal: target, done: 0, entered: false, missed: d < TODAY };
+      byDate[d] = { goal: target, done: 0, entered: false, missed: !finished && d < TODAY, finished };
     }
   }
-  return { byDate, target, doneSum, remaining, openCount, total };
+  return { byDate, target, doneSum, remaining, openCount, total, finished };
 }
 /* 그 날짜 이전까지 끝낸 누적 컷수 — 입력값은 "몇 번째 컷까지"라서 이 값을 뺀다 */
 function prevTotal(p, track, date) {
@@ -179,6 +180,7 @@ function render(keepInputs) {
 function hintOf(p, tk, d) {
   const s = SCH[p.id][tk].byDate[d];
   const prev = prevTotal(p, tk, d);
+  if (s.finished && !s.entered) return '작업 완료 — 남은 컷 없음';
   return '목표 ' + num(prev + s.goal) + '번째 · 오늘 ' + num(s.done) + '컷' + (s.missed ? ' · 미입력' : '');
 }
 function inputRow(p, t, d) {
@@ -300,8 +302,8 @@ function renderSidebar() {
         '<div class="trk-h"><span>' + (t.label || '진행') + '</span>' +
           '<span>' + num(s.doneSum) + ' / ' + num(s.total) + '컷 · ' + pct + '%</span></div>' +
         '<div class="bar"><span style="width:' + pct + '%;background:' + p.color + '"></span></div>' +
-        '<div class="trk-f">' + (s.openCount ? '하루 ' + num(s.target) + '컷' : '남은 작업 없음') +
-          (td ? ' · 오늘 ' + num(td.done) + '/' + num(td.goal) + '컷' : '') + '</div>' +
+        '<div class="trk-f">' + (s.finished ? '작업 완료' : s.openCount ? '하루 ' + num(s.target) + '컷' : '남은 작업 없음') +
+          (td && !s.finished ? ' · 오늘 ' + num(td.done) + '/' + num(td.goal) + '컷' : '') + '</div>' +
       '</div>';
     }).join('');
     const openDays = tracks[0] ? SCH[p.id][tracks[0].k].openCount : 0;
@@ -335,8 +337,13 @@ function chipHtml(p, d) {
     if (!s) continue;
     any = true;
     const pre = t.label ? t.label + ' ' : '';
+    if (s.finished && !s.entered) {               // 총량을 다 채운 뒤의 날 — 남은 할 일이 없다
+      tip += ' · ' + pre + '작업 완료';
+      grps += '<div class="grp"><span class="cline fin"><span>' + pre + '완료</span></span></div>';
+      continue;
+    }
     const ok = s.entered && s.done >= s.goal;
-    tip += ' · ' + (t.label ? t.label + ' ' : '') + '목표 ' + s.goal + '컷' + (s.entered ? ' / 작업 ' + s.done + '컷' : '');
+    tip += ' · ' + pre + '목표 ' + s.goal + '컷' + (s.entered ? ' / 작업 ' + s.done + '컷' : '');
     grps += '<div class="grp">' +
       '<span class="cline"><span>' + pre + '목표</span><b>' + s.goal + '</b></span>' +
       '<span class="cline' + (s.entered ? '' : ' na') + (ok ? ' ok' : '') + '"><span>' + pre + '작업</span><b>' +
