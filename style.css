@@ -173,7 +173,6 @@ button,input,select{font:inherit;color:inherit}
 .cell.today .dnum{background:var(--accent);color:#fff;min-width:21px;height:21px;padding:0 7px;border-radius:99px;display:inline-flex;align-items:center;font-size:11.5px}
 .cell.today .dnum em{color:#fff;opacity:.85}
 .flag{font-size:9.5px;padding:1px 5px;border-radius:5px;font-weight:700;color:#fff;line-height:1.5}
-.warn{margin-left:auto;font-size:10px;color:#f5a524;font-weight:700}
 
 .chip{display:block;border-radius:7px;padding:4px 7px 5px;margin-bottom:4px;font-size:11px;line-height:1.45;border-left:3px solid}
 .chip .cn{display:block;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:1px}
@@ -181,8 +180,6 @@ button,input,select{font:inherit;color:inherit}
 .chip .cline>span{flex:1 1 auto;min-width:0;color:var(--muted);font-weight:500;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .chip .cline b{flex:0 0 auto;font-weight:700;white-space:nowrap}
 .chip .cline.na b{color:var(--muted);font-weight:600}
-.chip .cline.ok b{color:var(--ok)}
-.chip .cline.fin>span{color:var(--ok);font-weight:700}
 .chip .grp+.grp{margin-top:2px;padding-top:2px;border-top:1px dashed rgba(128,138,158,.35)}
 .chip[draggable="true"]{cursor:grab}
 .chip[draggable="true"]:active{cursor:grabbing}

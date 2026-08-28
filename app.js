@@ -102,23 +102,24 @@ function schedule(p, track) {
   let doneSum = 0, openCount = 0;
   for (const d of days) {
     if (has(lg.done, d)) doneSum += Number(lg.done[d]) || 0;
-    else openCount++;
+    else if (d >= TODAY) openCount++;              // 지난 날은 입력이 없으면 0으로 확정된다
   }
   const remaining = Math.max(0, total - doneSum);
   const target = openCount ? Math.ceil(remaining / openCount) : 0;
-  const finished = total > 0 && remaining === 0;   // 총량을 다 채웠으면 남은 날은 할 일이 없다
+  const finished = total > 0 && remaining === 0;
 
   const byDate = {};
   let left = total, used = 0;
   for (const d of days) {
-    if (has(lg.done, d)) {
+    const entered = has(lg.done, d);
+    if (entered || d < TODAY) {                    // 이미 지나간 날 — 값이 확정됨
       const open = days.length - used;             // 그 시점에 남아 있던 작업일 수
-      const done = Number(lg.done[d]) || 0;
-      byDate[d] = { goal: open > 0 ? Math.ceil(left / open) : 0, done, entered: true, missed: false };
+      const done = entered ? Number(lg.done[d]) || 0 : 0;
+      byDate[d] = { goal: open > 0 ? Math.ceil(left / open) : 0, done, entered, settled: true };
       left = Math.max(0, left - done);
       used++;
     } else {
-      byDate[d] = { goal: target, done: 0, entered: false, missed: !finished && d < TODAY, finished };
+      byDate[d] = { goal: target, done: 0, entered: false, settled: false };
     }
   }
   return { byDate, target, doneSum, remaining, openCount, total, finished };
@@ -180,8 +181,7 @@ function render(keepInputs) {
 function hintOf(p, tk, d) {
   const s = SCH[p.id][tk].byDate[d];
   const prev = prevTotal(p, tk, d);
-  if (s.finished && !s.entered) return '작업 완료 — 남은 컷 없음';
-  return '목표 ' + num(prev + s.goal) + '번째 · 오늘 ' + num(s.done) + '컷' + (s.missed ? ' · 미입력' : '');
+  return '목표 ' + num(prev + s.goal) + '번째 · 오늘 ' + num(s.done) + '컷';
 }
 function inputRow(p, t, d) {
   const s = SCH[p.id][t.k].byDate[d];
@@ -337,17 +337,11 @@ function chipHtml(p, d) {
     if (!s) continue;
     any = true;
     const pre = t.label ? t.label + ' ' : '';
-    if (s.finished && !s.entered) {               // 총량을 다 채운 뒤의 날 — 남은 할 일이 없다
-      tip += ' · ' + pre + '작업 완료';
-      grps += '<div class="grp"><span class="cline fin"><span>' + pre + '완료</span></span></div>';
-      continue;
-    }
-    const ok = s.entered && s.done >= s.goal;
-    tip += ' · ' + pre + '목표 ' + s.goal + '컷' + (s.entered ? ' / 작업 ' + s.done + '컷' : '');
+    tip += ' · ' + pre + '목표 ' + s.goal + '컷 / 작업 ' + (s.settled ? s.done + '컷' : '미정');
     grps += '<div class="grp">' +
       '<span class="cline"><span>' + pre + '목표</span><b>' + s.goal + '</b></span>' +
-      '<span class="cline' + (s.entered ? '' : ' na') + (ok ? ' ok' : '') + '"><span>' + pre + '작업</span><b>' +
-        (s.entered ? s.done : '—') + '</b></span>' +
+      '<span class="cline' + (s.settled ? '' : ' na') + '"><span>' + pre + '작업</span><b>' +
+        (s.settled ? s.done : '—') + '</b></span>' +
     '</div>';
   }
   if (!any) return '';
@@ -414,14 +408,10 @@ function renderCalendar(keepView) {
       const picked = target && mode.type === 'days' && target.days.includes(d);
       const dlPick = target && mode.type === 'deadline' && target.deadline === d;
 
-      let chips = '', flags = '', missed = false;
+      let chips = '', flags = '';
       for (const p of PSORT) {
         if (p.deadline === d) flags += '<span class="flag" style="background:' + p.color + '">마감</span>';
         if (!p.days.includes(d)) continue;
-        for (const t of tracksOf(p)) {
-          const s = SCH[p.id][t.k].byDate[d];
-          if (s && s.missed) missed = true;
-        }
         chips += chipHtml(p, d);
       }
       const first = cur.getDate() === 1;
@@ -430,7 +420,7 @@ function renderCalendar(keepView) {
         (mode ? ' picking' : '') + (picked || dlPick ? ' picked' : '') + '" data-date="' + d + '">' +
         '<div class="dhead"><span class="dnum">' +
           (first ? '<em>' + (cur.getMonth() + 1) + '월</em> ' : '') + cur.getDate() + '</span>' + flags +
-        (missed ? '<span class="warn">미입력</span>' : '') + '</div>' + chips +
+        '</div>' + chips +
       '</div>';
     }
     html += weekCellHtml(ymd(addDays(anchor, w * 7))) + '</div>';
