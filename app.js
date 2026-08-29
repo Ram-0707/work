@@ -76,6 +76,12 @@ function esc(s) {
   return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 function num(n) { return n.toLocaleString('ko-KR'); }
+/* 하루 할당량은 소수 첫째 자리까지 — 반올림하면 하루치가 크게 부풀어 오른다 */
+function round1(x) { return Math.round(x * 10) / 10; }
+function fmtCut(n) {
+  const v = round1(Number(n) || 0);
+  return Number.isInteger(v) ? v.toLocaleString('ko-KR') : v.toFixed(1);
+}
 function byId(id) { return state.projects.find(p => p.id === id); }
 function has(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
 function tracksOf(p) {
@@ -104,7 +110,7 @@ function schedule(p, track) {
     else if (d >= TODAY) openCount++;              // 지난 날은 입력이 없으면 0으로 확정된다
   }
   const remaining = Math.max(0, total - doneSum);
-  const target = openCount ? Math.ceil(remaining / openCount) : 0;
+  const target = openCount ? round1(remaining / openCount) : 0;
   const finished = total > 0 && remaining === 0;
 
   const byDate = {};
@@ -114,7 +120,7 @@ function schedule(p, track) {
     if (entered || d < TODAY) {                    // 이미 지나간 날 — 값이 확정됨
       const open = days.length - used;             // 그 시점에 남아 있던 작업일 수
       const done = entered ? Number(lg.done[d]) || 0 : 0;
-      byDate[d] = { goal: open > 0 ? Math.ceil(left / open) : 0, done, entered, settled: true };
+      byDate[d] = { goal: open > 0 ? round1(left / open) : 0, done, entered, settled: true };
       left = Math.max(0, left - done);
       used++;
     } else {
@@ -180,7 +186,7 @@ function render(keepInputs) {
 function hintOf(p, tk, d) {
   const s = SCH[p.id][tk].byDate[d];
   const prev = prevTotal(p, tk, d);
-  return '목표 ' + num(prev + s.goal) + '번째 · 오늘 ' + num(s.done) + '컷';
+  return '목표 ' + fmtCut(prev + s.goal) + '번째 · 오늘 ' + num(s.done) + '컷';
 }
 function inputRow(p, t, d) {
   const s = SCH[p.id][t.k].byDate[d];
@@ -279,9 +285,9 @@ function renderTopbar() {
   const sum = document.getElementById('todaySum');
   sum.title = '콘티 프로젝트는 클린업만 합산합니다. 초안은 제외됩니다.';
   sum.innerHTML =
-    '<span>오늘 목표 <b>' + num(goal) + '컷</b></span>' +
+    '<span>오늘 목표 <b>' + fmtCut(goal) + '컷</b></span>' +
     '<span>완료 <b>' + num(done) + '컷</b></span>' +
-    '<span>남은 <b>' + num(Math.max(0, goal - done)) + '컷</b></span>';
+    '<span>남은 <b>' + fmtCut(Math.max(0, goal - done)) + '컷</b></span>';
 }
 
 function renderSidebar() {
@@ -303,8 +309,8 @@ function renderSidebar() {
         '<div class="trk-h"><span>' + (t.label || '진행') + '</span>' +
           '<span>' + num(s.doneSum) + ' / ' + num(s.total) + '컷 · ' + pct + '%</span></div>' +
         '<div class="bar"><span style="width:' + pct + '%;background:' + p.color + '"></span></div>' +
-        '<div class="trk-f">' + (s.finished ? '작업 완료' : s.openCount ? '하루 ' + num(s.target) + '컷' : '남은 작업 없음') +
-          (td && !s.finished ? ' · 오늘 ' + num(td.done) + '/' + num(td.goal) + '컷' : '') + '</div>' +
+        '<div class="trk-f">' + (s.finished ? '작업 완료' : s.openCount ? '하루 ' + fmtCut(s.target) + '컷' : '남은 작업 없음') +
+          (td && !s.finished ? ' · 오늘 ' + num(td.done) + '/' + fmtCut(td.goal) + '컷' : '') + '</div>' +
       '</div>';
     }).join('');
     const openDays = tracks[0] ? SCH[p.id][tracks[0].k].openCount : 0;
@@ -338,9 +344,9 @@ function chipHtml(p, d) {
     if (!s) continue;
     any = true;
     const pre = t.label ? t.label + ' ' : '';
-    tip += ' · ' + pre + '목표 ' + s.goal + '컷 / 작업 ' + (s.settled ? s.done + '컷' : '미정');
+    tip += ' · ' + pre + '목표 ' + fmtCut(s.goal) + '컷 / 작업 ' + (s.settled ? s.done + '컷' : '미정');
     grps += '<div class="grp">' +
-      '<span class="cline"><span>' + pre + '목표</span><b>' + s.goal + '</b></span>' +
+      '<span class="cline"><span>' + pre + '목표</span><b>' + fmtCut(s.goal) + '</b></span>' +
       '<span class="cline' + (s.settled ? '' : ' na') + '"><span>' + pre + '작업</span><b>' +
         (s.settled ? s.done : '—') + '</b></span>' +
     '</div>';
