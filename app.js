@@ -12,6 +12,7 @@ let editingId = null;   // 프로젝트 모달 편집 대상
 let formColor = PALETTE[0];
 let formDeadline = '';
 const openCards = new Set();   // 사이드바에서 펼쳐 둔 프로젝트
+let doneOpen = false;          // 완료 폴더 펼침 여부
 
 /* 하루의 경계는 자정이 아니라 새벽 6시.
    새벽 2시에 한 작업은 전날 몫으로 잡힌다. */
@@ -290,6 +291,48 @@ function renderTopbar() {
     '<span>남은 <b>' + fmtCut(Math.max(0, goal - done)) + '컷</b></span>';
 }
 
+function projectCard(p) {
+  const tracks = tracksOf(p);
+  const active = mode && mode.id === p.id;
+  const trk = tracks.map(t => {
+    const s = SCH[p.id][t.k];
+    const pct = s.total ? Math.min(100, Math.round(s.doneSum / s.total * 100)) : 0;
+    const td = s.byDate[TODAY];
+    return '<div class="trk">' +
+      '<div class="trk-h"><span>' + (t.label || '진행') + '</span>' +
+        '<span>' + num(s.doneSum) + ' / ' + num(s.total) + '컷 · ' + pct + '%</span></div>' +
+      '<div class="bar"><span style="width:' + pct + '%;background:' + p.color + '"></span></div>' +
+      '<div class="trk-f">' + (s.finished ? '작업 완료' : s.openCount ? '하루 ' + fmtCut(s.target) + '컷' : '남은 작업 없음') +
+        (td && !s.finished ? ' · 오늘 ' + num(td.done) + '/' + fmtCut(td.goal) + '컷' : '') + '</div>' +
+    '</div>';
+  }).join('');
+  const openDays = tracks[0] ? SCH[p.id][tracks[0].k].openCount : 0;
+  const open = openCards.has(p.id) || active;     // 날짜 지정 중인 프로젝트는 항상 펼침
+  return '<div class="card' + (active ? ' sel' : '') + (open ? ' open' : '') + '">' +
+    '<div class="card-top" data-act="toggle" data-id="' + p.id + '">' +
+      '<span class="chev">&#8250;</span>' +
+      '<span class="dot" style="background:' + p.color + '"></span>' +
+      '<span class="pname">' + esc(p.name) + '</span>' +
+      (p.storyboard ? '<span class="tag">콘티</span>' : '') +
+      '<button class="icon" data-act="edit" data-id="' + p.id + '" title="수정">&#8942;</button>' +
+    '</div>' +
+    (open ? '<div class="card-body">' + trk +
+      '<div class="meta">남은 작업일 ' + openDays + '일' +
+        (p.deadline ? ' · 마감 ' + fmtShort(p.deadline) : ' · 마감 미지정') + '</div>' +
+      '<div class="card-btns">' +
+        '<button class="btn ghost sm" data-act="days" data-id="' + p.id + '">' +
+          (active && mode.type === 'days' ? '선택 완료' : '작업일 (' + p.days.length + '일)') + '</button>' +
+        '<button class="btn ghost sm" data-act="deadline" data-id="' + p.id + '">' +
+          (active && mode.type === 'deadline' ? '지정 취소' : '마감일') + '</button>' +
+      '</div></div>' : '') +
+  '</div>';
+}
+
+/* 총 작업량을 다 채운 프로젝트 (콘티는 초안·클린업 모두) */
+function isDone(p) {
+  return tracksOf(p).every(t => SCH[p.id][t.k].finished);
+}
+
 function renderSidebar() {
   document.querySelectorAll('#sortBar button').forEach(b =>
     b.classList.toggle('on', b.dataset.sort === state.sort));
@@ -298,42 +341,17 @@ function renderSidebar() {
     el.innerHTML = '<div class="empty">아직 프로젝트가 없습니다.<br>아래 버튼으로 추가해 주세요.</div>';
     return;
   }
-  el.innerHTML = PSORT.map(p => {
-    const tracks = tracksOf(p);
-    const active = mode && mode.id === p.id;
-    const trk = tracks.map(t => {
-      const s = SCH[p.id][t.k];
-      const pct = s.total ? Math.min(100, Math.round(s.doneSum / s.total * 100)) : 0;
-      const td = s.byDate[TODAY];
-      return '<div class="trk">' +
-        '<div class="trk-h"><span>' + (t.label || '진행') + '</span>' +
-          '<span>' + num(s.doneSum) + ' / ' + num(s.total) + '컷 · ' + pct + '%</span></div>' +
-        '<div class="bar"><span style="width:' + pct + '%;background:' + p.color + '"></span></div>' +
-        '<div class="trk-f">' + (s.finished ? '작업 완료' : s.openCount ? '하루 ' + fmtCut(s.target) + '컷' : '남은 작업 없음') +
-          (td && !s.finished ? ' · 오늘 ' + num(td.done) + '/' + fmtCut(td.goal) + '컷' : '') + '</div>' +
-      '</div>';
-    }).join('');
-    const openDays = tracks[0] ? SCH[p.id][tracks[0].k].openCount : 0;
-    const open = openCards.has(p.id) || active;   // 날짜 지정 중인 프로젝트는 항상 펼침
-    return '<div class="card' + (active ? ' sel' : '') + (open ? ' open' : '') + '">' +
-      '<div class="card-top" data-act="toggle" data-id="' + p.id + '">' +
-        '<span class="chev">&#8250;</span>' +
-        '<span class="dot" style="background:' + p.color + '"></span>' +
-        '<span class="pname">' + esc(p.name) + '</span>' +
-        (p.storyboard ? '<span class="tag">콘티</span>' : '') +
-        '<button class="icon" data-act="edit" data-id="' + p.id + '" title="수정">&#8942;</button>' +
-      '</div>' +
-      (open ? '<div class="card-body">' + trk +
-        '<div class="meta">남은 작업일 ' + openDays + '일' +
-          (p.deadline ? ' · 마감 ' + fmtShort(p.deadline) : ' · 마감 미지정') + '</div>' +
-        '<div class="card-btns">' +
-          '<button class="btn ghost sm" data-act="days" data-id="' + p.id + '">' +
-            (active && mode.type === 'days' ? '선택 완료' : '작업일 (' + p.days.length + '일)') + '</button>' +
-          '<button class="btn ghost sm" data-act="deadline" data-id="' + p.id + '">' +
-            (active && mode.type === 'deadline' ? '지정 취소' : '마감일') + '</button>' +
-        '</div></div>' : '') +
+  const live = PSORT.filter(p => !isDone(p));
+  const done = PSORT.filter(isDone);
+  let html = live.map(projectCard).join('');
+  if (done.length) {                              // 끝난 작업은 접어서 따로 모은다
+    html += '<div class="folder' + (doneOpen ? ' open' : '') + '">' +
+      '<div class="folder-top" data-act="folder"><span class="chev">&#8250;</span>' +
+      '<span>완료</span><span class="fcount">' + done.length + '</span></div>' +
+      (doneOpen ? '<div class="folder-body">' + done.map(projectCard).join('') + '</div>' : '') +
     '</div>';
-  }).join('');
+  }
+  el.innerHTML = html;
 }
 
 function chipHtml(p, d) {
@@ -352,7 +370,9 @@ function chipHtml(p, d) {
     '</div>';
   }
   if (!any) return '';
-  return '<div class="chip"' + (mode ? '' : ' draggable="true"') + ' data-p="' + p.id + '"' +
+  const allDone = tracks.every(t => SCH[p.id][t.k].finished);
+  const past = d < TODAY || allDone;
+  return '<div class="chip' + (past ? ' past' : '') + '"' + (mode ? '' : ' data-drag="1"') + ' data-p="' + p.id + '"' +
     ' style="border-left-color:' + p.color + ';background:' + p.color + '14"' +
     ' title="' + tip + '&#10;드래그해서 다른 날짜로 이동 (Alt+드래그: 이 날짜만)">' +
     '<span class="cn" style="color:' + p.color + '">' + esc(p.name) + '</span>' + grps + '</div>';
@@ -534,6 +554,8 @@ function openProject(id, presetDeadline) {
   document.getElementById('fStoryboard').checked = p ? !!p.storyboard : false;
   formDeadline = p ? (p.deadline || '') : (presetDeadline || '');
   document.getElementById('fDeadlineText').textContent = formDeadline ? fmtShort(formDeadline) : '미지정';
+  document.getElementById('fDaysText').textContent = p ? p.days.length + '일' : '저장 후 지정';
+  document.getElementById('fPickDays').disabled = !p;
   formColor = p ? p.color : PALETTE[state.projects.length % PALETTE.length];
   document.getElementById('fColors').innerHTML = PALETTE.map(c =>
     '<button class="sw' + (c === formColor ? ' on' : '') + '" data-color="' + c + '" style="background:' + c + '"></button>'
@@ -543,13 +565,14 @@ function openProject(id, presetDeadline) {
   document.getElementById('fName').focus();
 }
 
-function saveProject() {
+function saveProject(then) {
   const name = document.getElementById('fName').value.trim();
   const cuts = parseInt(document.getElementById('fCuts').value, 10);
   const sb = document.getElementById('fStoryboard').checked;
   if (!name) { alert('프로젝트 이름을 입력해 주세요.'); return; }
   if (!cuts || cuts < 1) { alert('총 작업량(컷)을 1 이상으로 입력해 주세요.'); return; }
 
+  let id = editingId;
   if (editingId) {
     Object.assign(byId(editingId), { name, totalCuts: cuts, color: formColor, storyboard: sb });
   } else {
@@ -557,9 +580,11 @@ function saveProject() {
     for (const k of Object.keys(TRACKS)) log[k] = { done: {} };
     const p = { id: uid(), name, color: formColor, totalCuts: cuts, deadline: formDeadline, storyboard: sb, days: [], log };
     state.projects.push(p);
-    mode = { type: 'days', id: p.id };
-    lastPick = null;
+    id = p.id;
   }
+  mode = { type: then || 'days', id };             // 저장 후 바로 날짜를 고르는 모드로
+  if (editingId && !then) mode = null;             // 단순 수정이면 모드 없이 닫는다
+  lastPick = null;
   save();
   document.getElementById('pMask').hidden = true;
   render();                                       // 보고 있던 화면 위치를 그대로 둔다
@@ -769,7 +794,10 @@ document.getElementById('nextM').onclick = () => {
 document.getElementById('todayBtn').onclick = () => scrollToDate(TODAY, true);
 document.getElementById('addProject').onclick = () => openProject(null, '');
 document.getElementById('bannerDone').onclick = () => { mode = null; lastPick = null; render(); };
-document.getElementById('pSave').onclick = saveProject;
+document.getElementById('pSave').onclick = () => saveProject();
+/* 저장한 다음 캘린더에서 날짜를 고르는 모드로 넘어간다 */
+document.getElementById('fPickDays').onclick = () => saveProject('days');
+document.getElementById('fPickDeadline').onclick = () => saveProject('deadline');
 document.getElementById('pDelete').onclick = deleteProject;
 document.getElementById('tlNewDeadline').onclick = () => openProject(null, tlDate);
 
@@ -865,6 +893,7 @@ document.getElementById('projects').addEventListener('click', e => {
   if (!b) return;
   const act = b.dataset.act, id = b.dataset.id;
   if (act === 'edit') { openProject(id); return; }
+  if (act === 'folder') { doneOpen = !doneOpen; renderSidebar(); return; }
   if (act === 'toggle') {
     if (openCards.has(id)) openCards.delete(id); else openCards.add(id);
     renderSidebar();
@@ -876,6 +905,7 @@ document.getElementById('projects').addEventListener('click', e => {
 });
 
 document.getElementById('cal').addEventListener('click', e => {
+  if (skipClick) { skipClick = false; return; }   // 드래그 끝에 딸려 오는 클릭
   const cell = e.target.closest('.cell');
   if (!cell) return;
   const d = cell.dataset.date;
@@ -886,8 +916,8 @@ document.getElementById('cal').addEventListener('click', e => {
   else setDeadline(p, d);
 });
 
-/* ── 드래그로 작업일 옮기기 ─────────────── */
-let drag = null, dragPaint = '';
+/* ── 드래그 표시 ────────────────────────── */
+let dragPaint = '';
 const cal = document.getElementById('cal');
 
 function paintDrop(dates, dl) {
@@ -904,52 +934,135 @@ function paintDrop(dates, dl) {
     if (c) c.classList.add('drop-dl');
   }
 }
-function clearDrag() {
+/* 드래그 표시 정리 */
+function clearDragUi() {
   cal.querySelectorAll('.cell.drop, .cell.drop-dl').forEach(c => c.classList.remove('drop', 'drop-dl'));
-  cal.querySelectorAll('.chip.dragging').forEach(c => c.classList.remove('dragging'));
-  drag = null;
+  cal.querySelectorAll('.wcell.cdrop').forEach(c => c.classList.remove('cdrop'));
+  cal.querySelectorAll('.dragging, .cdragging').forEach(c => c.classList.remove('dragging', 'cdragging'));
   dragPaint = '';
 }
 
-cal.addEventListener('dragstart', e => {
+/* ── 드래그 (포인터 이벤트 기반) ────────────
+   HTML5 드래그앤드롭은 브라우저·입력장치에 따라 시작조차 안 되는 일이
+   잦아 포인터 이벤트로 직접 구현한다. 트랙패드에서도 동일하게 동작하고
+   체크리스트 손잡이는 터치로도 잡힌다.
+   · 칩          → 붙어 있는 작업일 묶음 이동 (Alt: 그 하루만)
+   · 체크리스트  → 순서 바꾸기 · 다른 주로 옮기기                        */
+let pdrag = null;        // 드래그 중인 대상
+let skipClick = false;   // 드래그 직후의 클릭은 무시한다
+
+function dragStartCandidate(e) {
+  if (e.button !== 0 || pdrag) return;
+  const grip = e.target.closest('.wc-g');
+  if (grip) {
+    const li = grip.closest('.wc-i');
+    const cell = li && li.closest('.wcell');
+    if (!li || !cell) return;
+    pdrag = { kind: 'item', el: li, id: li.dataset.id, wk: cell.dataset.week,
+              x: e.clientX, y: e.clientY, started: false };
+    e.preventDefault();
+    return;
+  }
+  if (e.pointerType === 'touch') return;          // 터치에서는 칸 스크롤을 살린다
   const chip = e.target.closest('.chip');
-  if (!chip) return;                              // 체크리스트 드래그는 아래에서 따로 처리
-  if (mode) { e.preventDefault(); return; }
+  if (!chip || mode) return;
   const p = byId(chip.dataset.p);
-  const d = chip.closest('.cell').dataset.date;
-  if (!p) { e.preventDefault(); return; }
-  drag = { pid: p.id, date: d, block: blockOf(p, d) };
-  e.dataTransfer.effectAllowed = 'move';
-  e.dataTransfer.setData('text/plain', p.id);   // Firefox 대응
-  chip.classList.add('dragging');
-});
-
-cal.addEventListener('dragover', e => {
-  if (!drag) return;
-  const cell = e.target.closest('.cell');
-  if (!cell) return;
+  const cell = chip.closest('.cell');
+  if (!p || !cell) return;
+  pdrag = { kind: 'chip', el: chip, pid: p.id, date: cell.dataset.date,
+            block: blockOf(p, cell.dataset.date), delta: 0,
+            x: e.clientX, y: e.clientY, started: false };
   e.preventDefault();
-  e.dataTransfer.dropEffect = 'move';
-  const delta = dayDiff(parseYmd(drag.date), parseYmd(cell.dataset.date));
-  const src = e.altKey ? [drag.date] : drag.block;
-  const p = byId(drag.pid);
-  const dl = p && movesDeadline(p, src) ? ymd(addDays(parseYmd(p.deadline), delta)) : '';
-  paintDrop(src.map(d => ymd(addDays(parseYmd(d), delta))), dl);
-});
+}
 
-cal.addEventListener('drop', e => {
-  if (!drag) return;
-  const cell = e.target.closest('.cell');
-  if (!cell) return;
+/* 화면 끝에 닿으면 캘린더를 따라 굴린다 */
+function edgeScroll(y) {
+  const r = wrap.getBoundingClientRect();
+  if (y < r.top + 48) wrap.scrollTop -= 12;
+  else if (y > r.bottom - 48) wrap.scrollTop += 12;
+}
+
+function dragMove(e) {
+  if (!pdrag) return;
+  if (!pdrag.started) {
+    if (Math.abs(e.clientX - pdrag.x) + Math.abs(e.clientY - pdrag.y) < 5) return;
+    pdrag.started = true;
+    pdrag.el.classList.add(pdrag.kind === 'chip' ? 'dragging' : 'cdragging');
+    document.body.classList.add('dragging-now');
+  }
   e.preventDefault();
-  const p = byId(drag.pid);
-  const delta = dayDiff(parseYmd(drag.date), parseYmd(cell.dataset.date));
-  const src = e.altKey ? [drag.date] : drag.block;
-  clearDrag();
-  if (p && delta) { moveDays(p, src, delta); save(); render(); }
-});
+  edgeScroll(e.clientY);
+  const under = document.elementFromPoint(e.clientX, e.clientY);
+  if (!under) return;
 
-cal.addEventListener('dragend', clearDrag);
+  if (pdrag.kind === 'chip') {
+    const cell = under.closest('.cell');
+    if (!cell) return;
+    pdrag.delta = dayDiff(parseYmd(pdrag.date), parseYmd(cell.dataset.date));
+    pdrag.src = e.altKey ? [pdrag.date] : pdrag.block;
+    const p = byId(pdrag.pid);
+    const dl = p && movesDeadline(p, pdrag.src) ? ymd(addDays(parseYmd(p.deadline), pdrag.delta)) : '';
+    paintDrop(pdrag.src.map(d => ymd(addDays(parseYmd(d), pdrag.delta))), dl);
+    return;
+  }
+
+  const cell = under.closest('.wcell');
+  if (!cell) return;
+  cal.querySelectorAll('.wcell.cdrop').forEach(c => { if (c !== cell) c.classList.remove('cdrop'); });
+  cell.classList.add('cdrop');
+  const list = cell.querySelector('.wc-list');
+  let before = null;                               // 커서 위쪽 절반이면 그 항목 앞에 끼운다
+  for (const c of list.querySelectorAll('.wc-i:not(.cdragging)')) {
+    const r = c.getBoundingClientRect();
+    if (e.clientY < r.top + r.height / 2) { before = c; break; }
+  }
+  if (before) list.insertBefore(pdrag.el, before);
+  else list.appendChild(pdrag.el);
+}
+
+function dragEnd() {
+  if (!pdrag) return;
+  const g = pdrag;
+  pdrag = null;
+  document.body.classList.remove('dragging-now');
+  if (!g.started) { clearDragUi(); return; }       // 그냥 클릭이었다
+  skipClick = true;
+
+  if (g.kind === 'chip') {
+    const p = byId(g.pid);
+    clearDragUi();
+    if (p && g.delta) { moveDays(p, g.src || g.block, g.delta); save(); }
+    render();
+    return;
+  }
+  const destCell = g.el.closest('.wcell');
+  if (destCell) {
+    const destWk = destCell.dataset.week;
+    const idx = [...destCell.querySelectorAll('.wc-i')].indexOf(g.el);
+    const src = state.weeks[g.wk] || [];
+    const i = src.findIndex(x => x.id === g.id);
+    const item = i >= 0 ? src.splice(i, 1)[0] : null;
+    pruneWeek(g.wk);
+    if (item) weekItems(destWk).splice(idx, 0, item);
+    save();
+  }
+  clearDragUi();
+  renderCalendar();
+}
+
+function dragCancel() {
+  if (!pdrag) return;
+  const started = pdrag.started;
+  pdrag = null;
+  document.body.classList.remove('dragging-now');
+  clearDragUi();
+  if (started) renderCalendar();
+}
+
+cal.addEventListener('pointerdown', dragStartCandidate);
+document.addEventListener('pointermove', dragMove, { passive: false });
+document.addEventListener('pointerup', dragEnd);
+document.addEventListener('pointercancel', dragCancel);
 
 /* ── 체크리스트 조작 (전체 렌더 없이 해당 칸만 갱신) ── */
 cal.addEventListener('change', e => {
@@ -1019,79 +1132,6 @@ cal.addEventListener('focusout', e => {
   save();
 });
 
-/* ── 체크리스트 항목 드래그 (순서 바꾸기 · 다른 주로 옮기기) ── */
-let cdrag = null;
-
-/* 손잡이를 눌렀을 때만 끌 수 있게 한다 (글자 편집과 충돌 방지) */
-cal.addEventListener('mousedown', e => {
-  const g = e.target.closest('.wc-g');
-  const li = g && g.closest('.wc-i');
-  if (li) li.draggable = true;
-});
-document.addEventListener('mouseup', () => {
-  cal.querySelectorAll('.wc-i[draggable="true"]').forEach(li => li.removeAttribute('draggable'));
-});
-
-function endCDrag() {
-  cal.querySelectorAll('.cdragging').forEach(el => el.classList.remove('cdragging'));
-  cal.querySelectorAll('.wcell.cdrop').forEach(el => el.classList.remove('cdrop'));
-  cal.querySelectorAll('.wc-i[draggable="true"]').forEach(li => li.removeAttribute('draggable'));
-}
-
-cal.addEventListener('dragstart', e => {
-  const li = e.target.closest('.wc-i');
-  if (!li || !li.draggable) return;
-  cdrag = { wk: li.closest('.wcell').dataset.week, id: li.dataset.id };
-  li.classList.add('cdragging');
-  e.dataTransfer.effectAllowed = 'move';
-  e.dataTransfer.setData('text/plain', li.dataset.id);
-});
-
-cal.addEventListener('dragover', e => {
-  if (!cdrag) return;
-  const cell = e.target.closest('.wcell');
-  if (!cell) return;
-  e.preventDefault();
-  e.dataTransfer.dropEffect = 'move';
-  cal.querySelectorAll('.wcell.cdrop').forEach(c => { if (c !== cell) c.classList.remove('cdrop'); });
-  cell.classList.add('cdrop');
-
-  const el = cal.querySelector('.wc-i.cdragging');
-  const list = cell.querySelector('.wc-list');
-  let before = null;                              // 커서 위쪽 절반이면 그 항목 앞에 끼운다
-  for (const c of list.querySelectorAll('.wc-i:not(.cdragging)')) {
-    const r = c.getBoundingClientRect();
-    if (e.clientY < r.top + r.height / 2) { before = c; break; }
-  }
-  if (before) list.insertBefore(el, before); else list.appendChild(el);
-});
-
-cal.addEventListener('drop', e => {
-  if (!cdrag) return;
-  const cell = e.target.closest('.wcell');
-  const el = cal.querySelector('.wc-i.cdragging');
-  if (!cell || !el) { cdrag = null; endCDrag(); renderCalendar(); return; }
-  e.preventDefault();
-  const destWk = el.closest('.wcell').dataset.week;
-  const idx = [...el.closest('.wcell').querySelectorAll('.wc-i')].indexOf(el);
-
-  const src = state.weeks[cdrag.wk] || [];
-  const i = src.findIndex(x => x.id === cdrag.id);
-  const item = i >= 0 ? src.splice(i, 1)[0] : null;
-  pruneWeek(cdrag.wk);
-  if (item) weekItems(destWk).splice(idx, 0, item);
-  cdrag = null;
-  save();
-  endCDrag();
-  renderCalendar();
-});
-
-cal.addEventListener('dragend', () => {
-  const cancelled = !!cdrag;
-  cdrag = null;
-  endCDrag();
-  if (cancelled) renderCalendar();                // 취소되면 원래 순서로 되돌린다
-});
 
 /* ── 백업 내보내기 / 불러오기 ───────────── */
 function exportData() {
