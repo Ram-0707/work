@@ -28,9 +28,12 @@ const TODAY = ymd(logicalDate(Date.now()));
 function load() {
   let s = null;
   try { s = JSON.parse(localStorage.getItem(KEY)); } catch (e) { /* 손상된 데이터는 무시 */ }
-  if (!s || !Array.isArray(s.projects)) return { projects: [], weeks: {}, sort: 'added', entries: [] };
+  if (!s || !Array.isArray(s.projects)) return { projects: [], weeks: {}, sort: 'added', entries: [], events: [] };
   s.weeks = s.weeks || {};                        // 주간 체크리스트 (일요일 날짜가 key)
   s.sort = s.sort || 'added';                     // 사이드바 정렬 방식
+  s.events = (Array.isArray(s.events) ? s.events : [])     // 작업이 아닌 그날의 일정
+    .filter(e => e && e.d && String(e.name || '').trim())
+    .map(e => ({ id: e.id || uid(), d: e.d, name: String(e.name).trim() }));
   s.entries = (Array.isArray(s.entries) ? s.entries : [])  // 입력 기록 (타임테이블)
     .filter(e => e && (e.text ? String(e.text).trim() : e.delta > 0))   // 마이너스 기록은 쓰지 않는다
     .map(e => e.text
@@ -252,6 +255,16 @@ function renderTimeline(keepInputs) {
     refreshRows(document.getElementById('tlInputs'), tlDate);
   }
 
+  const evs = eventsOf(tlDate);
+  document.getElementById('tlEvents').innerHTML = evs.map(ev =>
+    '<div class="ev-row" data-ev="' + ev.id + '">' +
+      '<span class="ev-dot"></span>' +
+      '<span class="ev-name">' + esc(ev.name) + '</span>' +
+      '<span class="tl-act">' +
+        '<button data-act="ev-edit" title="수정">&#9998;</button>' +
+        '<button data-act="ev-del" title="삭제">&#10005;</button></span>' +
+    '</div>').join('');
+
   const cum = cumulative(list);
   const acts = '<span class="tl-act">' +
     '<button data-act="tle-edit" title="수정">&#9998;</button>' +
@@ -378,6 +391,17 @@ function chipHtml(p, d) {
     '<span class="cn" style="color:' + p.color + '">' + esc(p.name) + '</span>' + grps + '</div>';
 }
 
+/* 작업이 아닌 그날의 일정 — 같은 카드 모양에 이름만 */
+const EVENT_COLOR = '#737373';
+function eventsOf(d) { return state.events.filter(e => e.d === d); }
+function eventChipHtml(ev) {
+  return '<div class="chip ev' + (ev.d < TODAY ? ' past' : '') + '"' +
+    (mode ? '' : ' data-drag="1"') + ' data-ev="' + ev.id + '"' +
+    ' style="border-left-color:' + EVENT_COLOR + ';background:' + EVENT_COLOR + '14"' +
+    ' title="' + esc(ev.name) + '&#10;드래그해서 다른 날짜로 이동">' +
+    '<span class="cn">' + esc(ev.name) + '</span></div>';
+}
+
 /* ── 주간 체크리스트 ────────────────────── */
 function itemHtml(it) {
   return '<li class="wc-row wc-i' + (it.d ? ' done' : '') + '" data-id="' + it.id + '">' +
@@ -441,6 +465,7 @@ function renderCalendar(keepView) {
         if (!p.days.includes(d)) continue;
         chips += chipHtml(p, d);
       }
+      for (const ev of eventsOf(d)) chips += eventChipHtml(ev);
       const first = cur.getDate() === 1;
       html += '<div class="cell' + (cur.getMonth() % 2 ? ' alt' : '') + (d === TODAY ? ' today' : '') +
         (dow === 0 ? ' sun' : dow === 6 ? ' sat' : '') +
@@ -873,6 +898,57 @@ document.getElementById('tlNote').addEventListener('keydown', e => {
   if (addNote(e.target.value)) { e.target.value = ''; renderTimeline(); }
 });
 
+/* ── 그날의 일정 (작업이 아닌 것) ────────── */
+document.getElementById('tlEvent').addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  const name = e.target.value.trim();
+  if (!name) return;
+  state.events.push({ id: uid(), d: tlDate, name });
+  save();
+  e.target.value = '';
+  renderTimeline();
+  renderCalendar();
+});
+
+document.getElementById('tlEvents').addEventListener('click', e => {
+  const b = e.target.closest('[data-act]');
+  if (!b) return;
+  const row = b.closest('.ev-row');
+  const ev = state.events.find(x => x.id === row.dataset.ev);
+  if (!ev) return;
+
+  if (b.dataset.act === 'ev-del') {
+    if (!confirm('일정 "' + ev.name + '"을(를) 지울까요?')) return;
+    state.events = state.events.filter(x => x.id !== ev.id);
+    save();
+    renderTimeline();
+    renderCalendar();
+    return;
+  }
+  const cell = row.querySelector('.ev-name');
+  if (cell.querySelector('input')) return;
+  cell.innerHTML = '<input class="tl-edit wide" type="text" value="' + esc(ev.name) + '">';
+  const inp = cell.querySelector('input');
+  inp.focus();
+  inp.select();
+  let done = false;
+  const commit = () => {
+    if (done) return;
+    done = true;
+    const v = inp.value.trim();
+    if (v) ev.name = v;
+    else state.events = state.events.filter(x => x.id !== ev.id);
+    save();
+    renderTimeline();
+    renderCalendar();
+  };
+  inp.addEventListener('keydown', ev2 => {
+    if (ev2.key === 'Enter') commit();
+    else if (ev2.key === 'Escape') { done = true; renderTimeline(); }
+  });
+  inp.addEventListener('blur', commit);
+});
+
 document.getElementById('sortBar').addEventListener('click', e => {
   const b = e.target.closest('[data-sort]');
   if (!b || b.dataset.sort === state.sort) return;
@@ -966,6 +1042,14 @@ function dragStartCandidate(e) {
   if (e.pointerType === 'touch') return;          // 터치에서는 칸 스크롤을 살린다
   const chip = e.target.closest('.chip');
   if (!chip || mode) return;
+  if (chip.dataset.ev) {                          // 작업이 아닌 일정 — 하루만 옮긴다
+    const cell = chip.closest('.cell');
+    if (!cell) return;
+    pdrag = { kind: 'event', el: chip, id: chip.dataset.ev, date: cell.dataset.date,
+              delta: 0, x: e.clientX, y: e.clientY, started: false };
+    e.preventDefault();
+    return;
+  }
   const p = byId(chip.dataset.p);
   const cell = chip.closest('.cell');
   if (!p || !cell) return;
@@ -987,13 +1071,21 @@ function dragMove(e) {
   if (!pdrag.started) {
     if (Math.abs(e.clientX - pdrag.x) + Math.abs(e.clientY - pdrag.y) < 5) return;
     pdrag.started = true;
-    pdrag.el.classList.add(pdrag.kind === 'chip' ? 'dragging' : 'cdragging');
+    pdrag.el.classList.add(pdrag.kind === 'item' ? 'cdragging' : 'dragging');
     document.body.classList.add('dragging-now');
   }
   e.preventDefault();
   edgeScroll(e.clientY);
   const under = document.elementFromPoint(e.clientX, e.clientY);
   if (!under) return;
+
+  if (pdrag.kind === 'event') {
+    const cell = under.closest('.cell');
+    if (!cell) return;
+    pdrag.delta = dayDiff(parseYmd(pdrag.date), parseYmd(cell.dataset.date));
+    paintDrop([cell.dataset.date], '');
+    return;
+  }
 
   if (pdrag.kind === 'chip') {
     const cell = under.closest('.cell');
@@ -1027,6 +1119,14 @@ function dragEnd() {
   document.body.classList.remove('dragging-now');
   if (!g.started) { clearDragUi(); return; }       // 그냥 클릭이었다
   skipClick = true;
+
+  if (g.kind === 'event') {
+    const ev = state.events.find(x => x.id === g.id);
+    clearDragUi();
+    if (ev && g.delta) { ev.d = ymd(addDays(parseYmd(ev.d), g.delta)); save(); }
+    render();
+    return;
+  }
 
   if (g.kind === 'chip') {
     const p = byId(g.pid);
