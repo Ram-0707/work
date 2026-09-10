@@ -3,6 +3,7 @@
 const KEY = 'webtoon-workload-v1';
 const PALETTE = ['#EF4444', '#F97316', '#F59E0B', '#22C55E', '#06B6D4', '#3B82F6', '#8B5CF6', '#EC4899', '#0EA5E9', '#737373'];
 const OLD_COLORS = { '#64748B': '#737373' };   // 푸른 기가 돌던 회색을 무채색으로
+const MAX_CUSTOM_COLORS = 12;                  // 직접 만든 색은 최근 것부터 이만큼 남긴다
 const TRACKS = { main: '', draft: '초안', clean: '클린업' };
 
 let state = load();
@@ -28,9 +29,16 @@ const TODAY = ymd(logicalDate(Date.now()));
 function load() {
   let s = null;
   try { s = JSON.parse(localStorage.getItem(KEY)); } catch (e) { /* 손상된 데이터는 무시 */ }
-  if (!s || !Array.isArray(s.projects)) return { projects: [], weeks: {}, sort: 'added', entries: [], events: [] };
+  if (!s || !Array.isArray(s.projects)) {
+    return { projects: [], weeks: {}, sort: 'added', entries: [], events: [], customColors: [] };
+  }
   s.weeks = s.weeks || {};                        // 주간 체크리스트 (일요일 날짜가 key)
   s.sort = s.sort || 'added';                     // 사이드바 정렬 방식
+  s.customColors = (Array.isArray(s.customColors) ? s.customColors : [])   // 직접 만든 색
+    .map(c => String(c).trim().toUpperCase())
+    .filter(c => /^#[0-9A-F]{6}$/.test(c) && !PALETTE.includes(c))
+    .filter((c, i, a) => a.indexOf(c) === i)
+    .slice(0, MAX_CUSTOM_COLORS);
   s.events = (Array.isArray(s.events) ? s.events : [])     // 작업이 아닌 그날의 일정
     .filter(e => e && e.d && String(e.name || '').trim())
     .map(e => ({ id: e.id || uid(), d: e.d, name: String(e.name).trim() }));
@@ -164,7 +172,12 @@ function sortProjects() {
   const arr = state.projects.slice();             // 등록 순서 자체는 건드리지 않는다
   const byName = (a, b) => a.name.localeCompare(b.name, 'ko');
   if (state.sort === 'color') {
-    const rank = p => (PALETTE.indexOf(p.color) + 1) || 99;
+    const rank = p => {                           // 기본 색 먼저, 그다음 직접 만든 색
+      const i = PALETTE.indexOf(p.color);
+      if (i >= 0) return i;
+      const j = state.customColors.indexOf(p.color);
+      return PALETTE.length + (j >= 0 ? j : 99);
+    };
     arr.sort((a, b) => rank(a) - rank(b) || byName(a, b));
   } else if (state.sort === 'due') {
     arr.sort((a, b) => (a.deadline || '9999-99-99').localeCompare(b.deadline || '9999-99-99') || byName(a, b));
@@ -570,6 +583,29 @@ function scrollToDate(d, smooth) {
 }
 
 /* ── 프로젝트 모달 ──────────────────────── */
+/* 기본 색 + 직접 만든 색 + 색 고르개 */
+function renderSwatches() {
+  const sw = c => '<button type="button" class="sw' + (c === formColor ? ' on' : '') +
+    '" data-color="' + c + '" style="background:' + c + '" title="' + c + '"></button>';
+  const mine = state.customColors.map(c =>
+    '<span class="sw-wrap">' + sw(c) +
+    '<button type="button" class="sw-rm" data-rm="' + c + '" title="이 색 지우기">&#10005;</button></span>').join('');
+  document.getElementById('fColors').innerHTML =
+    PALETTE.map(sw).join('') +
+    (mine ? '<span class="sw-sep"></span>' + mine : '') +
+    '<label class="sw-pick" title="색 직접 고르기">+' +
+      '<input type="color" id="fCustom" value="' + (formColor || '#737373') + '"></label>';
+}
+
+/* 고른 색을 목록 맨 앞에 남긴다 (기본 색이면 따로 저장하지 않는다) */
+function rememberColor(c) {
+  const v = String(c).trim().toUpperCase();
+  if (!/^#[0-9A-F]{6}$/.test(v) || PALETTE.includes(v)) return v;
+  state.customColors = [v, ...state.customColors.filter(x => x !== v)].slice(0, MAX_CUSTOM_COLORS);
+  save();
+  return v;
+}
+
 function openProject(id, presetDeadline) {
   editingId = id || null;
   const p = id ? byId(id) : null;
@@ -582,9 +618,7 @@ function openProject(id, presetDeadline) {
   document.getElementById('fDaysText').textContent = p ? p.days.length + '일' : '저장 후 지정';
   document.getElementById('fPickDays').disabled = !p;
   formColor = p ? p.color : PALETTE[state.projects.length % PALETTE.length];
-  document.getElementById('fColors').innerHTML = PALETTE.map(c =>
-    '<button class="sw' + (c === formColor ? ' on' : '') + '" data-color="' + c + '" style="background:' + c + '"></button>'
-  ).join('');
+  renderSwatches();
   document.getElementById('pDelete').style.display = p ? '' : 'none';
   document.getElementById('pMask').hidden = false;
   document.getElementById('fName').focus();
@@ -958,10 +992,25 @@ document.getElementById('sortBar').addEventListener('click', e => {
 });
 
 document.getElementById('fColors').addEventListener('click', e => {
+  const rm = e.target.closest('[data-rm]');
+  if (rm) {                                       // 직접 만든 색을 목록에서 뺀다
+    state.customColors = state.customColors.filter(c => c !== rm.dataset.rm);
+    save();
+    renderSwatches();
+    return;
+  }
   const b = e.target.closest('[data-color]');
   if (!b) return;
   formColor = b.dataset.color;
-  [...e.currentTarget.children].forEach(c => c.classList.toggle('on', c === b));
+  document.querySelectorAll('#fColors .sw').forEach(c => c.classList.toggle('on', c === b));
+});
+
+/* 색 고르개는 창을 닫을 때(change)만 반영한다.
+   input 이벤트로 처리하면 고르는 중에 스와치가 다시 그려져 고르개가 닫힌다. */
+document.getElementById('fColors').addEventListener('change', e => {
+  if (e.target.id !== 'fCustom') return;
+  formColor = rememberColor(e.target.value);
+  renderSwatches();
 });
 
 document.getElementById('projects').addEventListener('click', e => {
