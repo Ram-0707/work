@@ -213,7 +213,9 @@ function inputRow(p, t, d) {
       '<span class="dgap"></span>' +
       '<input type="number" min="0" step="1" data-p="' + p.id + '" data-t="' + t.k + '"' +
         ' placeholder="' + prev + '" value="' + (s.entered ? prev + s.done : '') + '">' +
-      '<span class="unit">번째</span></div>' +
+      '<span class="unit">번째</span>' +
+      '<button type="button" class="inc" data-inc="' + p.id + ':' + t.k + '"' +
+        ' title="한 컷 끝낼 때마다 누르세요">+1</button></div>' +
     '<div class="dhint" data-goal="' + p.id + ':' + t.k + '">' + hintOf(p, t.k, d) + '</div>';
 }
 /* 입력 중에는 칸을 그대로 두고 안내 문구와 다른 칸 값만 맞춘다 */
@@ -883,7 +885,15 @@ document.getElementById('tlNext').onclick = () => { tlDate = ymd(addDays(parseYm
 document.getElementById('tlToday').onclick = () => { tlDate = TODAY; renderTimeline(); };
 document.getElementById('tlInputs').addEventListener('click', e => {
   const b = e.target.closest('[data-edit]');
-  if (b) openProject(b.dataset.edit);
+  if (b) { openProject(b.dataset.edit); return; }
+
+  const inc = e.target.closest('[data-inc]');     // 한 컷 끝낼 때마다 한 칸씩
+  if (!inc) return;
+  const [pid, tk] = inc.dataset.inc.split(':');
+  const p = byId(pid);
+  const s = p && SCH[pid][tk].byDate[tlDate];
+  if (!s) return;
+  setDone(pid, tk, prevTotal(p, tk, tlDate) + s.done + 1, tlDate);
 });
 document.getElementById('tlInputs').addEventListener('change', e => {
   const i = e.target;
