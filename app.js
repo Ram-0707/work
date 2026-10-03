@@ -7,11 +7,10 @@ const MAX_CUSTOM_COLORS = 12;                  // 직접 만든 색은 최근 �
 const TRACKS = { main: '', draft: '초안', clean: '클린업' };
 
 let state = load();
-let mode = null;        // {type:'days'|'deadline', id} — 캘린더 클릭 동작
+let mode = null;        // {type:'days', id} — 캘린더에서 작업일을 고르는 중
 let lastPick = null;    // Shift 범위 선택 기준일
 let editingId = null;   // 프로젝트 모달 편집 대상
 let formColor = PALETTE[0];
-let formDeadline = '';
 const openCards = new Set();   // 사이드바에서 펼쳐 둔 프로젝트
 let doneOpen = false;          // 완료 폴더 펼침 여부
 
@@ -30,7 +29,7 @@ function load() {
   let s = null;
   try { s = JSON.parse(localStorage.getItem(KEY)); } catch (e) { /* 손상된 데이터는 무시 */ }
   if (!s || !Array.isArray(s.projects)) {
-    return { projects: [], weeks: {}, sort: 'added', entries: [], events: [], customColors: [] };
+    return { projects: [], weeks: {}, sort: 'added', entries: [], events: [], customColors: [], lists: [] };
   }
   s.weeks = s.weeks || {};                        // 주간 체크리스트 (일요일 날짜가 key)
   s.sort = s.sort || 'added';                     // 사이드바 정렬 방식
@@ -39,6 +38,21 @@ function load() {
     .filter(c => /^#[0-9A-F]{6}$/.test(c) && !PALETTE.includes(c))
     .filter((c, i, a) => a.indexOf(c) === i)
     .slice(0, MAX_CUSTOM_COLORS);
+  s.lists = (Array.isArray(s.lists) ? s.lists : [])        // 체크리스트 그룹
+    .filter(g => g && String(g.name || '').trim())
+    .map(g => ({
+      id: g.id || uid(),
+      name: String(g.name).trim(),
+      open: g.open !== false,
+      nums: (Array.isArray(g.nums) ? g.nums : [])
+        .filter(x => x && Number.isFinite(Number(x.n)))
+        .map(x => ({ n: Number(x.n), done: !!x.done }))
+        .filter((x, i, a) => a.findIndex(y => y.n === x.n) === i)
+        .sort((a, b) => a.n - b.n),
+      items: (Array.isArray(g.items) ? g.items : [])
+        .filter(x => x && String(x.text || '').trim())
+        .map(x => ({ id: x.id || uid(), text: String(x.text).trim(), done: !!x.done }))
+    }));
   s.events = (Array.isArray(s.events) ? s.events : [])     // 작업이 아닌 그날의 일정
     .filter(e => e && e.d && String(e.name || '').trim())
     .map(e => ({ id: e.id || uid(), d: e.d, name: String(e.name).trim() }));
@@ -50,6 +64,7 @@ function load() {
   for (const p of s.projects) {
     p.days = p.days || [];
     p.storyboard = !!p.storyboard;
+    delete p.deadline;                            // 마감 기능은 더 쓰지 않는다
     if (OLD_COLORS[p.color]) p.color = OLD_COLORS[p.color];
     if (!p.log) p.log = {};
     if (p.done || p.goal) {                       // 콘티 기능 이전 데이터 이행
@@ -179,8 +194,6 @@ function sortProjects() {
       return PALETTE.length + (j >= 0 ? j : 99);
     };
     arr.sort((a, b) => rank(a) - rank(b) || byName(a, b));
-  } else if (state.sort === 'due') {
-    arr.sort((a, b) => (a.deadline || '9999-99-99').localeCompare(b.deadline || '9999-99-99') || byName(a, b));
   }
   return arr;
 }
@@ -192,6 +205,7 @@ function render(keepInputs) {
   SCH = allSchedules();
   PSORT = sortProjects();
   renderSidebar();
+  renderLists();
   renderTimeline(keepInputs);
   renderCalendar();
   renderTopbar();
@@ -233,6 +247,63 @@ function refreshRows(root, d) {
     el.placeholder = prev;
     el.value = s && s.entered ? prev + s.done : '';
   });
+}
+
+/* ── 체크리스트 (그룹 + 번호 격자 + 글 항목) ──
+   "1-10, 15" 처럼 적으면 번호가 가로로 깔리고, 글로 적으면 한 줄짜리
+   항목이 된다. 페이지가 많아도 번호는 격자로 접혀 들어간다. */
+function parseNums(text) {
+  const out = [];
+  for (const part of String(text).split(/[,\s]+/)) {
+    if (!part) continue;
+    const m = part.match(/^(\d+)\s*(?:[-~]\s*(\d+))?$/);
+    if (!m) return null;                           // 숫자 형식이 아니면 글 항목으로 넘긴다
+    const a = Number(m[1]);
+    const b = m[2] === undefined ? a : Number(m[2]);
+    if (a < 0 || b < 0 || Math.abs(b - a) > 500) return null;
+    for (let n = Math.min(a, b); n <= Math.max(a, b); n++) out.push(n);
+  }
+  return out.length ? out : null;
+}
+
+function listById(id) { return state.lists.find(g => g.id === id); }
+
+function renderLists() {
+  const el = document.getElementById('lists');
+  if (!state.lists.length) {
+    el.innerHTML = '<div class="empty">그룹이 없습니다.<br>아래에 이름을 적어 만들어 주세요.</div>';
+    return;
+  }
+  el.innerHTML = state.lists.map(g => {
+    const total = g.nums.length + g.items.length;
+    const done = g.nums.filter(x => x.done).length + g.items.filter(x => x.done).length;
+    const pct = total ? Math.round(done / total * 100) : 0;
+    const nums = g.nums.map(x =>
+      '<button type="button" class="nchip' + (x.done ? ' on' : '') +
+      '" data-num="' + g.id + ':' + x.n + '">' + x.n + '</button>').join('');
+    const items = g.items.map(it =>
+      '<div class="litem' + (it.done ? ' done' : '') + '" data-item="' + g.id + ':' + it.id + '">' +
+        '<input type="checkbox"' + (it.done ? ' checked' : '') + '>' +
+        '<span class="ltext">' + esc(it.text) + '</span>' +
+        '<button type="button" class="lx" data-del="' + g.id + ':' + it.id + '" title="삭제">&#10005;</button>' +
+      '</div>').join('');
+    return '<div class="lgroup' + (g.open ? ' open' : '') + '" data-g="' + g.id + '">' +
+      '<div class="lg-top" data-toggle="' + g.id + '">' +
+        '<span class="chev">&#8250;</span>' +
+        '<span class="lg-name">' + esc(g.name) + '</span>' +
+        '<span class="lg-count">' + done + '/' + total + '</span>' +
+        '<button type="button" class="icon sm" data-grename="' + g.id + '" title="이름 바꾸기">&#9998;</button>' +
+        '<button type="button" class="icon sm" data-gdel="' + g.id + '" title="그룹 삭제">&#10005;</button>' +
+      '</div>' +
+      '<div class="lg-bar"><span style="width:' + pct + '%"></span></div>' +
+      (g.open ? '<div class="lg-body">' +
+        (nums ? '<div class="nchips">' + nums + '</div>' : '') +
+        (items ? '<div class="litems">' + items + '</div>' : '') +
+        '<input class="lg-add" type="text" data-add="' + g.id + '"' +
+          ' placeholder="1-10 또는 할 일을 적고 Enter">' +
+      '</div>' : '') +
+    '</div>';
+  }).join('');
 }
 
 /* ── 타임테이블 ─────────────────────────── */
@@ -345,13 +416,10 @@ function projectCard(p) {
       '<button class="icon" data-act="edit" data-id="' + p.id + '" title="수정">&#8942;</button>' +
     '</div>' +
     (open ? '<div class="card-body">' + trk +
-      '<div class="meta">남은 작업일 ' + openDays + '일' +
-        (p.deadline ? ' · 마감 ' + fmtShort(p.deadline) : ' · 마감 미지정') + '</div>' +
+      '<div class="meta">남은 작업일 ' + openDays + '일</div>' +
       '<div class="card-btns">' +
         '<button class="btn ghost sm" data-act="days" data-id="' + p.id + '">' +
-          (active && mode.type === 'days' ? '선택 완료' : '작업일 (' + p.days.length + '일)') + '</button>' +
-        '<button class="btn ghost sm" data-act="deadline" data-id="' + p.id + '">' +
-          (active && mode.type === 'deadline' ? '지정 취소' : '마감일') + '</button>' +
+          (active ? '선택 완료' : '작업일 (' + p.days.length + '일)') + '</button>' +
       '</div></div>' : '') +
   '</div>';
 }
@@ -471,12 +539,10 @@ function renderCalendar(keepView) {
       const cur = addDays(anchor, w * 7 + i);
       const d = ymd(cur);
       const dow = cur.getDay();
-      const picked = target && mode.type === 'days' && target.days.includes(d);
-      const dlPick = target && mode.type === 'deadline' && target.deadline === d;
+      const picked = target && target.days.includes(d);
 
-      let chips = '', flags = '';
+      let chips = '';
       for (const p of PSORT) {
-        if (p.deadline === d) flags += '<span class="flag" style="background:' + p.color + '">마감</span>';
         if (!p.days.includes(d)) continue;
         chips += chipHtml(p, d);
       }
@@ -484,9 +550,9 @@ function renderCalendar(keepView) {
       const first = cur.getDate() === 1;
       html += '<div class="cell' + (cur.getMonth() % 2 ? ' alt' : '') + (d === TODAY ? ' today' : '') +
         (dow === 0 ? ' sun' : dow === 6 ? ' sat' : '') +
-        (mode ? ' picking' : '') + (picked || dlPick ? ' picked' : '') + '" data-date="' + d + '">' +
+        (mode ? ' picking' : '') + (picked ? ' picked' : '') + '" data-date="' + d + '">' +
         '<div class="dhead"><span class="dnum">' +
-          (first ? '<em>' + (cur.getMonth() + 1) + '월</em> ' : '') + cur.getDate() + '</span>' + flags +
+          (first ? '<em>' + (cur.getMonth() + 1) + '월</em> ' : '') + cur.getDate() + '</span>' +
         '</div>' + chips +
       '</div>';
     }
@@ -504,16 +570,9 @@ function renderBanner() {
   if (!p) { mode = null; b.hidden = true; return; }
   b.hidden = false;
   document.getElementById('bdot').style.background = p.color;
-  if (mode.type === 'days') {
-    document.getElementById('bannerText').textContent = p.name + ' — 작업일 ' + p.days.length + '일 선택됨';
-    document.getElementById('bannerHint').textContent = '날짜를 클릭해 작업일을 추가/제거하세요. Shift+클릭으로 범위 선택.';
-    document.getElementById('bannerDone').textContent = '선택 완료';
-  } else {
-    document.getElementById('bannerText').textContent = p.name + ' — 마감일 지정';
-    document.getElementById('bannerHint').textContent = '마감일로 지정할 날짜를 클릭하세요.' +
-      (p.deadline ? ' (현재 ' + fmtShort(p.deadline) + ')' : '');
-    document.getElementById('bannerDone').textContent = '취소';
-  }
+  document.getElementById('bannerText').textContent = p.name + ' — 작업일 ' + p.days.length + '일 선택됨';
+  document.getElementById('bannerHint').textContent = '날짜를 클릭해 작업일을 추가/제거하세요. Shift+클릭으로 범위 선택.';
+  document.getElementById('bannerDone').textContent = '선택 완료';
 }
 
 /* ── 스크롤: 달 경계 없이 주 단위로 계속 이어짐 ── */
@@ -608,15 +667,13 @@ function rememberColor(c) {
   return v;
 }
 
-function openProject(id, presetDeadline) {
+function openProject(id) {
   editingId = id || null;
   const p = id ? byId(id) : null;
   document.getElementById('pTitle').textContent = p ? '프로젝트 수정' : '새 프로젝트';
   document.getElementById('fName').value = p ? p.name : '';
   document.getElementById('fCuts').value = p ? p.totalCuts : '';
   document.getElementById('fStoryboard').checked = p ? !!p.storyboard : false;
-  formDeadline = p ? (p.deadline || '') : (presetDeadline || '');
-  document.getElementById('fDeadlineText').textContent = formDeadline ? fmtShort(formDeadline) : '미지정';
   document.getElementById('fDaysText').textContent = p ? p.days.length + '일' : '저장 후 지정';
   document.getElementById('fPickDays').disabled = !p;
   formColor = p ? p.color : PALETTE[state.projects.length % PALETTE.length];
@@ -626,7 +683,7 @@ function openProject(id, presetDeadline) {
   document.getElementById('fName').focus();
 }
 
-function saveProject(then) {
+function saveProject(pickDays) {
   const name = document.getElementById('fName').value.trim();
   const cuts = parseInt(document.getElementById('fCuts').value, 10);
   const sb = document.getElementById('fStoryboard').checked;
@@ -639,12 +696,12 @@ function saveProject(then) {
   } else {
     const log = {};
     for (const k of Object.keys(TRACKS)) log[k] = { done: {} };
-    const p = { id: uid(), name, color: formColor, totalCuts: cuts, deadline: formDeadline, storyboard: sb, days: [], log };
+    const p = { id: uid(), name, color: formColor, totalCuts: cuts, storyboard: sb, days: [], log };
     state.projects.push(p);
     id = p.id;
   }
-  mode = { type: then || 'days', id };             // 저장 후 바로 날짜를 고르는 모드로
-  if (editingId && !then) mode = null;             // 단순 수정이면 모드 없이 닫는다
+  mode = { type: 'days', id };                     // 저장 후 바로 작업일을 고르는 모드로
+  if (editingId && !pickDays) mode = null;         // 단순 수정이면 모드 없이 닫는다
   lastPick = null;
   save();
   document.getElementById('pMask').hidden = true;
@@ -806,16 +863,9 @@ function blockOf(p, d) {
   return days.slice(a, b + 1);
 }
 
-/* 마감일도 같이 움직여야 하는 이동인지 — 마지막 작업일이 포함된 경우만 */
-function movesDeadline(p, src) {
-  if (!p.deadline || !p.days.length) return false;
-  return src.includes(p.days[p.days.length - 1]);
-}
-
 /* 작업일과 그날의 기록을 통째로 delta일 만큼 옮긴다 */
 function moveDays(p, src, delta) {
   if (!delta || !src.length) return;
-  const shiftDl = movesDeadline(p, src);
   const dest = src.map(d => ymd(addDays(parseYmd(d), delta)));
   const srcSet = new Set(src);
   const days = new Set(p.days.filter(d => !srcSet.has(d)));
@@ -832,15 +882,6 @@ function moveDays(p, src, delta) {
     for (const d of Object.keys(lg.done)) if (!days.has(d)) delete lg.done[d];
   }
   p.days = [...days].sort();
-  if (shiftDl) p.deadline = ymd(addDays(parseYmd(p.deadline), delta));
-}
-
-function setDeadline(p, d) {
-  p.deadline = p.deadline === d ? '' : d;
-  mode = p.days.length ? null : { type: 'days', id: p.id };
-  lastPick = null;
-  save();
-  render();
 }
 
 /* ── 이벤트 ─────────────────────────────── */
@@ -858,15 +899,14 @@ document.getElementById('bannerDone').onclick = () => { mode = null; lastPick = 
 document.getElementById('pSave').onclick = () => saveProject();
 /* 저장한 다음 캘린더에서 날짜를 고르는 모드로 넘어간다 */
 document.getElementById('fPickDays').onclick = () => saveProject('days');
-document.getElementById('fPickDeadline').onclick = () => saveProject('deadline');
 document.getElementById('pDelete').onclick = deleteProject;
-document.getElementById('tlNewDeadline').onclick = () => openProject(null, tlDate);
 
 /* 사이드바 탭 전환 */
 function setTab(name) {
   document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x.dataset.tab === name));
   document.getElementById('paneProjects').hidden = name !== 'projects';
   document.getElementById('paneTimeline').hidden = name !== 'timeline';
+  document.getElementById('paneLists').hidden = name !== 'lists';
 }
 /* 캘린더에서 날짜를 누르면 타임테이블을 그 날짜로 옮긴다 */
 function openTimelineDay(d) {
@@ -940,6 +980,98 @@ document.getElementById('tlLog').addEventListener('click', e => {
 document.getElementById('tlNote').addEventListener('keydown', e => {
   if (e.key !== 'Enter') return;
   if (addNote(e.target.value)) { e.target.value = ''; renderTimeline(); }
+});
+
+/* ── 체크리스트 조작 ────────────────────── */
+document.getElementById('listNew').addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  const name = e.target.value.trim();
+  if (!name) return;
+  state.lists.push({ id: uid(), name, open: true, nums: [], items: [] });
+  save();
+  e.target.value = '';
+  renderLists();
+});
+
+document.getElementById('lists').addEventListener('keydown', e => {
+  const add = e.target.closest('[data-add]');
+  if (!add || e.key !== 'Enter') return;
+  const g = listById(add.dataset.add);
+  const raw = add.value.trim();
+  if (!g || !raw) return;
+  const nums = parseNums(raw);
+  if (nums) {                                     // 번호 — 없는 것만 더하고 정렬한다
+    const have = new Set(g.nums.map(x => x.n));
+    nums.forEach(n => { if (!have.has(n)) { g.nums.push({ n, done: false }); have.add(n); } });
+    g.nums.sort((a, b) => a.n - b.n);
+  } else {
+    g.items.push({ id: uid(), text: raw, done: false });
+  }
+  save();
+  renderLists();
+  const again = document.querySelector('[data-add="' + g.id + '"]');
+  if (again) again.focus();
+});
+
+document.getElementById('lists').addEventListener('click', e => {
+  const num = e.target.closest('[data-num]');
+  if (num) {                                      // 번호 하나 체크 / 해제
+    const [gid, n] = num.dataset.num.split(':');
+    const g = listById(gid);
+    const x = g && g.nums.find(v => v.n === Number(n));
+    if (!x) return;
+    x.done = !x.done;
+    save();
+    renderLists();
+    return;
+  }
+  const del = e.target.closest('[data-del]');
+  if (del) {
+    const [gid, iid] = del.dataset.del.split(':');
+    const g = listById(gid);
+    if (!g) return;
+    g.items = g.items.filter(i => i.id !== iid);
+    save();
+    renderLists();
+    return;
+  }
+  const gdel = e.target.closest('[data-gdel]');
+  if (gdel) {
+    const g = listById(gdel.dataset.gdel);
+    if (!g || !confirm('그룹 "' + g.name + '"을(를) 지울까요?')) return;
+    state.lists = state.lists.filter(x => x.id !== g.id);
+    save();
+    renderLists();
+    return;
+  }
+  const ren = e.target.closest('[data-grename]');
+  if (ren) {
+    const g = listById(ren.dataset.grename);
+    if (!g) return;
+    const v = prompt('그룹 이름', g.name);
+    if (v && v.trim()) { g.name = v.trim(); save(); renderLists(); }
+    return;
+  }
+  const tg = e.target.closest('[data-toggle]');
+  if (tg) {
+    const g = listById(tg.dataset.toggle);
+    if (!g) return;
+    g.open = !g.open;
+    save();
+    renderLists();
+  }
+});
+
+document.getElementById('lists').addEventListener('change', e => {
+  const row = e.target.closest('[data-item]');    // 글 항목 체크
+  if (!row || e.target.type !== 'checkbox') return;
+  const [gid, iid] = row.dataset.item.split(':');
+  const g = listById(gid);
+  const it = g && g.items.find(i => i.id === iid);
+  if (!it) return;
+  it.done = e.target.checked;
+  save();
+  renderLists();
 });
 
 /* ── 그날의 일정 (작업이 아닌 것) ────────── */
@@ -1047,31 +1179,26 @@ document.getElementById('cal').addEventListener('click', e => {
   if (!mode) { openTimelineDay(d); return; }
   const p = byId(mode.id);
   if (!p) { mode = null; render(); return; }
-  if (mode.type === 'days') toggleDay(p, d, e.shiftKey);
-  else setDeadline(p, d);
+  toggleDay(p, d, e.shiftKey);
 });
 
 /* ── 드래그 표시 ────────────────────────── */
 let dragPaint = '';
 const cal = document.getElementById('cal');
 
-function paintDrop(dates, dl) {
-  const key = dates.join() + '|' + (dl || '');
+function paintDrop(dates) {
+  const key = dates.join();
   if (key === dragPaint) return;
   dragPaint = key;
-  cal.querySelectorAll('.cell.drop, .cell.drop-dl').forEach(c => c.classList.remove('drop', 'drop-dl'));
+  cal.querySelectorAll('.cell.drop').forEach(c => c.classList.remove('drop'));
   for (const d of dates) {
     const c = cal.querySelector('.cell[data-date="' + d + '"]');
     if (c) c.classList.add('drop');
   }
-  if (dl) {
-    const c = cal.querySelector('.cell[data-date="' + dl + '"]');
-    if (c) c.classList.add('drop-dl');
-  }
 }
 /* 드래그 표시 정리 */
 function clearDragUi() {
-  cal.querySelectorAll('.cell.drop, .cell.drop-dl').forEach(c => c.classList.remove('drop', 'drop-dl'));
+  cal.querySelectorAll('.cell.drop').forEach(c => c.classList.remove('drop'));
   cal.querySelectorAll('.wcell.cdrop').forEach(c => c.classList.remove('cdrop'));
   cal.querySelectorAll('.dragging, .cdragging').forEach(c => c.classList.remove('dragging', 'cdragging'));
   dragPaint = '';
@@ -1142,7 +1269,7 @@ function dragMove(e) {
     const cell = under.closest('.cell');
     if (!cell) return;
     pdrag.delta = dayDiff(parseYmd(pdrag.date), parseYmd(cell.dataset.date));
-    paintDrop([cell.dataset.date], '');
+    paintDrop([cell.dataset.date]);
     return;
   }
 
@@ -1151,9 +1278,7 @@ function dragMove(e) {
     if (!cell) return;
     pdrag.delta = dayDiff(parseYmd(pdrag.date), parseYmd(cell.dataset.date));
     pdrag.src = e.altKey ? [pdrag.date] : pdrag.block;
-    const p = byId(pdrag.pid);
-    const dl = p && movesDeadline(p, pdrag.src) ? ymd(addDays(parseYmd(p.deadline), pdrag.delta)) : '';
-    paintDrop(pdrag.src.map(d => ymd(addDays(parseYmd(d), pdrag.delta))), dl);
+    paintDrop(pdrag.src.map(d => ymd(addDays(parseYmd(d), pdrag.delta))));
     return;
   }
 
