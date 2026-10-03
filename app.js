@@ -11,8 +11,6 @@ let mode = null;        // {type:'days', id} — 캘린더에서 작업일을 �
 let lastPick = null;    // Shift 범위 선택 기준일
 let editingId = null;   // 프로젝트 모달 편집 대상
 let formColor = PALETTE[0];
-const openCards = new Set();   // 사이드바에서 펼쳐 둔 프로젝트
-let doneOpen = false;          // 완료 폴더 펼침 여부
 
 /* 하루의 경계는 자정이 아니라 새벽 6시.
    새벽 2시에 한 작업은 전날 몫으로 잡힌다. */
@@ -29,7 +27,8 @@ function load() {
   let s = null;
   try { s = JSON.parse(localStorage.getItem(KEY)); } catch (e) { /* 손상된 데이터는 무시 */ }
   if (!s || !Array.isArray(s.projects)) {
-    return { projects: [], weeks: {}, sort: 'added', entries: [], events: [], customColors: [], lists: [] };
+    return { projects: [], weeks: {}, sort: 'added', entries: [], events: [],
+             customColors: [], lists: [], counters: [] };
   }
   s.weeks = s.weeks || {};                        // 주간 체크리스트 (일요일 날짜가 key)
   s.sort = s.sort || 'added';                     // 사이드바 정렬 방식
@@ -53,6 +52,14 @@ function load() {
         .filter(x => x && String(x.text || '').trim())
         .map(x => ({ id: x.id || uid(), text: String(x.text).trim(), done: !!x.done }))
     }));
+  s.counters = (Array.isArray(s.counters) ? s.counters : [])   // 남은 작업량 카운터
+    .filter(c => c && String(c.name || '').trim() && Number.isFinite(Number(c.total)))
+    .map(c => {
+      const total = Math.max(0, Math.round(Number(c.total)));
+      const left = Math.min(total, Math.max(0, Math.round(Number(c.left))));
+      return { id: c.id || uid(), name: String(c.name).trim(), total,
+               left: Number.isFinite(left) ? left : total };
+    });
   s.events = (Array.isArray(s.events) ? s.events : [])     // 작업이 아닌 그날의 일정
     .filter(e => e && e.d && String(e.name || '').trim())
     .map(e => ({ id: e.id || uid(), d: e.d, name: String(e.name).trim() }));
@@ -204,8 +211,8 @@ let PSORT = [];
 function render(keepInputs) {
   SCH = allSchedules();
   PSORT = sortProjects();
-  renderSidebar();
   renderLists();
+  renderCounters();
   renderTimeline(keepInputs);
   renderCalendar();
   renderTopbar();
@@ -306,6 +313,44 @@ function renderLists() {
   }).join('');
 }
 
+/* ── 남은 작업량 카운터 ──────────────────
+   "스케치 6" 처럼 이름과 남은 컷수를 적어 두고, 작업한 만큼 하나씩 깎는다. */
+function parseCounter(text) {
+  const m = String(text).trim().match(/^(.*?)\s*(\d+)\s*(?:컷|장|p|P|페이지)?$/);
+  if (!m) return null;
+  const name = m[1].trim();
+  const total = Number(m[2]);
+  if (!name || !Number.isFinite(total) || total < 1) return null;
+  return { name, total };
+}
+
+function renderCounters() {
+  const el = document.getElementById('counters');
+  if (!state.counters.length) {
+    el.innerHTML = '<div class="empty">남은 작업이 없습니다.<br>아래에 <b>스케치 6</b>처럼 적어 주세요.</div>';
+    return;
+  }
+  el.innerHTML = state.counters.map(c => {
+    const done = c.total - c.left;
+    const pct = c.total ? Math.round(done / c.total * 100) : 0;
+    return '<div class="ctr' + (c.left === 0 ? ' done' : '') + '" data-c="' + c.id + '">' +
+      '<div class="ctr-top">' +
+        '<span class="ctr-name">' + esc(c.name) + '</span>' +
+        '<span class="ctr-left"><b>' + c.left + '</b> / ' + c.total + '</span>' +
+        '<button type="button" class="icon sm" data-cedit="' + c.id + '" title="수정">&#9998;</button>' +
+        '<button type="button" class="icon sm" data-cdel="' + c.id + '" title="삭제">&#10005;</button>' +
+      '</div>' +
+      '<div class="ctr-bar"><span style="width:' + pct + '%"></span></div>' +
+      '<div class="ctr-btns">' +
+        '<button type="button" class="ctr-minus" data-cdec="' + c.id + '"' +
+          (c.left === 0 ? ' disabled' : '') + '>&minus; 한 컷</button>' +
+        '<button type="button" class="ctr-undo" data-cinc="' + c.id + '"' +
+          (c.left >= c.total ? ' disabled' : '') + ' title="되돌리기">&plus;</button>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
 /* ── 타임테이블 ─────────────────────────── */
 let tlDate = TODAY;
 
@@ -390,65 +435,6 @@ function renderTopbar() {
     '<span>남은 <b>' + fmtCut(Math.max(0, goal - done)) + '컷</b></span>';
 }
 
-function projectCard(p) {
-  const tracks = tracksOf(p);
-  const active = mode && mode.id === p.id;
-  const trk = tracks.map(t => {
-    const s = SCH[p.id][t.k];
-    const pct = s.total ? Math.min(100, Math.round(s.doneSum / s.total * 100)) : 0;
-    const td = s.byDate[TODAY];
-    return '<div class="trk">' +
-      '<div class="trk-h"><span>' + (t.label || '진행') + '</span>' +
-        '<span>' + num(s.doneSum) + ' / ' + num(s.total) + '컷 · ' + pct + '%</span></div>' +
-      '<div class="bar"><span style="width:' + pct + '%;background:' + p.color + '"></span></div>' +
-      '<div class="trk-f">' + (s.finished ? '작업 완료' : s.openCount ? '하루 ' + fmtCut(s.target) + '컷' : '남은 작업 없음') +
-        (td && !s.finished ? ' · 오늘 ' + num(td.done) + '/' + fmtCut(td.goal) + '컷' : '') + '</div>' +
-    '</div>';
-  }).join('');
-  const openDays = tracks[0] ? SCH[p.id][tracks[0].k].openCount : 0;
-  const open = openCards.has(p.id) || active;     // 날짜 지정 중인 프로젝트는 항상 펼침
-  return '<div class="card' + (active ? ' sel' : '') + (open ? ' open' : '') + '">' +
-    '<div class="card-top" data-act="toggle" data-id="' + p.id + '">' +
-      '<span class="chev">&#8250;</span>' +
-      '<span class="dot" style="background:' + p.color + '"></span>' +
-      '<span class="pname">' + esc(p.name) + '</span>' +
-      (p.storyboard ? '<span class="tag">콘티</span>' : '') +
-      '<button class="icon" data-act="edit" data-id="' + p.id + '" title="수정">&#8942;</button>' +
-    '</div>' +
-    (open ? '<div class="card-body">' + trk +
-      '<div class="meta">남은 작업일 ' + openDays + '일</div>' +
-      '<div class="card-btns">' +
-        '<button class="btn ghost sm" data-act="days" data-id="' + p.id + '">' +
-          (active ? '선택 완료' : '작업일 (' + p.days.length + '일)') + '</button>' +
-      '</div></div>' : '') +
-  '</div>';
-}
-
-/* 총 작업량을 다 채운 프로젝트 (콘티는 초안·클린업 모두) */
-function isDone(p) {
-  return tracksOf(p).every(t => SCH[p.id][t.k].finished);
-}
-
-function renderSidebar() {
-  document.querySelectorAll('#sortBar button').forEach(b =>
-    b.classList.toggle('on', b.dataset.sort === state.sort));
-  const el = document.getElementById('projects');
-  if (!state.projects.length) {
-    el.innerHTML = '<div class="empty">아직 프로젝트가 없습니다.<br>아래 버튼으로 추가해 주세요.</div>';
-    return;
-  }
-  const live = PSORT.filter(p => !isDone(p));
-  const done = PSORT.filter(isDone);
-  let html = live.map(projectCard).join('');
-  if (done.length) {                              // 끝난 작업은 접어서 따로 모은다
-    html += '<div class="folder' + (doneOpen ? ' open' : '') + '">' +
-      '<div class="folder-top" data-act="folder"><span class="chev">&#8250;</span>' +
-      '<span>완료</span><span class="fcount">' + done.length + '</span></div>' +
-      (doneOpen ? '<div class="folder-body">' + done.map(projectCard).join('') + '</div>' : '') +
-    '</div>';
-  }
-  el.innerHTML = html;
-}
 
 function chipHtml(p, d) {
   const tracks = tracksOf(p);
@@ -904,9 +890,9 @@ document.getElementById('pDelete').onclick = deleteProject;
 /* 사이드바 탭 전환 */
 function setTab(name) {
   document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x.dataset.tab === name));
-  document.getElementById('paneProjects').hidden = name !== 'projects';
   document.getElementById('paneTimeline').hidden = name !== 'timeline';
   document.getElementById('paneLists').hidden = name !== 'lists';
+  document.getElementById('paneCounters').hidden = name !== 'counters';
 }
 /* 캘린더에서 날짜를 누르면 타임테이블을 그 날짜로 옮긴다 */
 function openTimelineDay(d) {
@@ -1074,6 +1060,59 @@ document.getElementById('lists').addEventListener('change', e => {
   renderLists();
 });
 
+/* ── 남은 작업량 조작 ───────────────────── */
+document.getElementById('counterNew').addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  const parsed = parseCounter(e.target.value);
+  if (!parsed) {
+    if (e.target.value.trim()) alert('이름과 숫자를 함께 적어 주세요.\n예) 스케치 6, 선화 22컷');
+    return;
+  }
+  state.counters.push({ id: uid(), name: parsed.name, total: parsed.total, left: parsed.total });
+  save();
+  e.target.value = '';
+  renderCounters();
+});
+
+document.getElementById('counters').addEventListener('click', e => {
+  const dec = e.target.closest('[data-cdec]');
+  if (dec) {                                      // 한 컷 깎기
+    const c = state.counters.find(x => x.id === dec.dataset.cdec);
+    if (c && c.left > 0) { c.left--; save(); renderCounters(); }
+    return;
+  }
+  const inc = e.target.closest('[data-cinc]');
+  if (inc) {                                      // 잘못 눌렀을 때 되돌리기
+    const c = state.counters.find(x => x.id === inc.dataset.cinc);
+    if (c && c.left < c.total) { c.left++; save(); renderCounters(); }
+    return;
+  }
+  const del = e.target.closest('[data-cdel]');
+  if (del) {
+    const c = state.counters.find(x => x.id === del.dataset.cdel);
+    if (!c || !confirm('"' + c.name + '"을(를) 지울까요?')) return;
+    state.counters = state.counters.filter(x => x.id !== c.id);
+    save();
+    renderCounters();
+    return;
+  }
+  const ed = e.target.closest('[data-cedit]');
+  if (ed) {
+    const c = state.counters.find(x => x.id === ed.dataset.cedit);
+    if (!c) return;
+    const v = prompt('이름과 남은 컷수', c.name + ' ' + c.left);
+    if (v === null) return;
+    const parsed = parseCounter(v);
+    if (!parsed) { alert('이름과 숫자를 함께 적어 주세요.'); return; }
+    const addBack = parsed.total - c.left;        // 남은 양을 고치면 총량도 같이 민다
+    c.name = parsed.name;
+    c.left = parsed.total;
+    c.total = Math.max(parsed.total, c.total + addBack);
+    save();
+    renderCounters();
+  }
+});
+
 /* ── 그날의 일정 (작업이 아닌 것) ────────── */
 document.getElementById('tlEvent').addEventListener('keydown', e => {
   if (e.key !== 'Enter') return;
@@ -1125,14 +1164,6 @@ document.getElementById('tlEvents').addEventListener('click', e => {
   inp.addEventListener('blur', commit);
 });
 
-document.getElementById('sortBar').addEventListener('click', e => {
-  const b = e.target.closest('[data-sort]');
-  if (!b || b.dataset.sort === state.sort) return;
-  state.sort = b.dataset.sort;
-  save();
-  render();
-});
-
 document.getElementById('fColors').addEventListener('click', e => {
   const rm = e.target.closest('[data-rm]');
   if (rm) {                                       // 직접 만든 색을 목록에서 뺀다
@@ -1153,22 +1184,6 @@ document.getElementById('fColors').addEventListener('change', e => {
   if (e.target.id !== 'fCustom') return;
   formColor = rememberColor(e.target.value);
   renderSwatches();
-});
-
-document.getElementById('projects').addEventListener('click', e => {
-  const b = e.target.closest('[data-act]');
-  if (!b) return;
-  const act = b.dataset.act, id = b.dataset.id;
-  if (act === 'edit') { openProject(id); return; }
-  if (act === 'folder') { doneOpen = !doneOpen; renderSidebar(); return; }
-  if (act === 'toggle') {
-    if (openCards.has(id)) openCards.delete(id); else openCards.add(id);
-    renderSidebar();
-    return;
-  }
-  mode = (mode && mode.id === id && mode.type === act) ? null : { type: act, id };
-  lastPick = null;
-  render();
 });
 
 document.getElementById('cal').addEventListener('click', e => {

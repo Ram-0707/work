@@ -9,12 +9,13 @@
   --accent:#2f6bff;
   --danger:#e5484d;
   --ok:#12a150;
+  --chk:#6f7480;                 /* 체크리스트·남은 작업 포인트 (무채색) */
   --shadow:0 8px 30px rgba(20,24,35,.10);
 }
 @media (prefers-color-scheme:dark){
   :root{
     --bg:#0e1015; --panel:#15181f; --panel-alt:#12151c; --text:#e8eaef; --muted:#8b93a4;
-    --line:#242833; --line-soft:#1c2029; --shadow:0 8px 30px rgba(0,0,0,.45);
+    --line:#242833; --line-soft:#1c2029; --chk:#9aa1ad; --shadow:0 8px 30px rgba(0,0,0,.45);
   }
 }
 *{box-sizing:border-box;margin:0;padding:0}
@@ -73,24 +74,46 @@ button,input,select{font:inherit;color:inherit}
 .lg-top .icon{opacity:0}
 .lg-top:hover .icon{opacity:1}
 .lg-bar{height:3px;background:var(--line-soft)}
-.lg-bar span{display:block;height:100%;background:var(--accent);transition:width .2s}
+.lg-bar span{display:block;height:100%;background:var(--chk);transition:width .2s}
 .lg-body{padding:9px 10px 10px}
 .nchips{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px}
 .nchip{width:28px;height:26px;border:1px solid var(--line);background:var(--panel);border-radius:7px;
   font-size:11px;font-weight:700;color:var(--muted);cursor:pointer;padding:0;font-variant-numeric:tabular-nums;transition:.1s}
-.nchip:hover{border-color:var(--accent);color:var(--accent)}
-.nchip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.nchip:hover{border-color:var(--chk);color:var(--chk)}
+.nchip.on{background:var(--chk);border-color:var(--chk);color:#fff}
 .litems{display:flex;flex-direction:column;gap:3px;margin-bottom:8px}
 .litem{display:flex;align-items:flex-start;gap:6px;font-size:11.5px;line-height:1.5}
-.litem input{margin-top:2px;width:12px;height:12px;accent-color:var(--accent);flex:none;cursor:pointer}
+.litem input{margin-top:2px;width:12px;height:12px;accent-color:var(--chk);flex:none;cursor:pointer}
 .ltext{flex:1;min-width:0;word-break:break-word}
 .litem.done .ltext{text-decoration:line-through;color:var(--muted)}
 .lx{border:none;background:none;color:var(--muted);cursor:pointer;font-size:10px;padding:2px;opacity:0;flex:none}
 .litem:hover .lx{opacity:1}
 .lg-add{width:100%;border:1px dashed var(--line);background:transparent;border-radius:8px;
   padding:6px 9px;font-size:11.5px;outline:none;color:var(--text)}
-.lg-add:focus{border-style:solid;border-color:var(--accent);background:var(--panel)}
+.lg-add:focus{border-style:solid;border-color:var(--chk);background:var(--panel)}
 .lg-add::placeholder{color:var(--muted)}
+
+/* 남은 작업량 카운터 */
+.ctr{border:1px solid var(--line);border-radius:12px;padding:10px 11px 9px;margin-bottom:8px}
+.ctr.done{opacity:.5}
+.ctr-top{display:flex;align-items:center;gap:7px;margin-bottom:7px}
+.ctr-name{flex:1;min-width:0;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ctr-left{font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.ctr-left b{font-size:15px;font-weight:700;color:var(--text)}
+.ctr.done .ctr-left b{color:var(--chk)}
+.ctr-top .icon{opacity:0}
+.ctr:hover .ctr-top .icon{opacity:1}
+.ctr-bar{height:4px;border-radius:99px;background:var(--line-soft);overflow:hidden;margin-bottom:9px}
+.ctr-bar span{display:block;height:100%;background:var(--chk);border-radius:99px;transition:width .2s}
+.ctr-btns{display:flex;gap:6px}
+.ctr-minus{flex:1;border:1px solid var(--chk);background:var(--chk);color:#fff;border-radius:9px;
+  padding:8px;font-size:12.5px;font-weight:700;cursor:pointer;transition:.12s}
+.ctr-minus:hover:not(:disabled){filter:brightness(1.1)}
+.ctr-minus:active:not(:disabled){transform:scale(.97)}
+.ctr-undo{flex:none;width:36px;border:1px solid var(--line);background:var(--panel);color:var(--muted);
+  border-radius:9px;font-size:13px;font-weight:700;cursor:pointer;transition:.12s}
+.ctr-undo:hover:not(:disabled){border-color:var(--chk);color:var(--text)}
+.ctr-minus:disabled,.ctr-undo:disabled{opacity:.35;cursor:default}
 
 .ev-row{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-left:3px solid #737373;border-radius:9px;padding:8px 10px;margin-bottom:6px;font-size:12px}
 .ev-dot{flex:none;width:8px;height:8px;border-radius:50%;background:#737373;opacity:.6}
@@ -139,13 +162,6 @@ button,input,select{font:inherit;color:inherit}
 .tag{font-size:9.5px;font-weight:700;padding:2px 5px;border-radius:5px;background:var(--line-soft);color:var(--muted);letter-spacing:.02em;flex:none}
 .card-btns{display:flex;gap:6px;margin-top:9px}
 .card-btns .btn{flex:1}
-.folder{border:1px solid var(--line);border-radius:12px;margin-top:10px;background:var(--panel-alt)}
-.folder-top{display:flex;align-items:center;gap:7px;padding:9px 10px;cursor:pointer;font-size:12.5px;font-weight:600;color:var(--muted);border-radius:11px}
-.folder-top:hover{background:var(--line-soft)}
-.folder.open .chev{transform:rotate(90deg)}
-.fcount{margin-left:auto;font-size:11px;font-weight:700;background:var(--line);color:var(--muted);border-radius:99px;padding:1px 7px}
-.folder-body{padding:0 7px 7px}
-.folder-body .card{background:var(--panel)}
 .empty{border:1px dashed var(--line);border-radius:14px;padding:22px 14px;text-align:center;color:var(--muted);font-size:12.5px;line-height:1.7}
 
 /* buttons */
